@@ -11,21 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Qt de escritorio (hace falta para compilar para Android)
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.0'
-          host: linux
-          target: desktop
-          arch: linux_gcc_64
-          cache: true
+      # Desde Qt 6.7, Qt para Android está bajo el host «all_os»; autodesktop baja también el Qt de
+      # escritorio de la misma versión (hace falta para compilar)
       - name: Qt para Android
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.10.0'
-          host: linux
+          host: all_os
           target: android
           arch: android_arm64_v8a
+          autodesktop: true
           cache: true
       - name: Compilar el APK
         env:
