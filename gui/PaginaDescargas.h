@@ -6,6 +6,8 @@
 
 #include "Herramientas.h"
 
+#include "ConsultaVideo.h"
+
 #include <QProcess>
 #include <QStringList>
 #include <QWidget>
@@ -37,6 +39,9 @@ private slots:
     void borrar();
 
 private:
+    void empezar();
+    void siguienteConsulta();
+    void terminoConsulta(int codigo, QProcess::ExitStatus estado);
     void siguienteUrl();
     void procesarLinea(const QString &linea);
     void registrarTerminados(const QString &miniatura);
@@ -45,6 +50,7 @@ private:
     void habilitarFormulario(bool habilitado);
     QString destino() const;
     QString carpetaMiniaturas() const;
+    QString carpetaSubtitulos() const;
     QString archivoRutas() const;
     QString ultimaMiniatura() const;
 
@@ -58,6 +64,10 @@ private:
     int listas = 0;
     int fallidas = 0;
     bool actualizando = false;
+    bool consultando = false;       // paso previo: «yt-dlp -J» de cada URL
+    QStringList urlsPedidas;        // todas las URL de esta descarga (la consulta no las consume)
+    OfertaVideo oferta;             // lo que ofrecen (suma de las consultas)
+    Eleccion eleccion;              // lo elegido en el diálogo (vacío: lo de siempre, en MKV)
     bool cancelado = false;
     QString archivoActual;
     QString mensajeError;

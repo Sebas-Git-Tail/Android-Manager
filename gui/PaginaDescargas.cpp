@@ -1,6 +1,7 @@
 #include "PaginaDescargas.h"
 #include "ui_PaginaDescargas.h"
 
+#include "DialogoPistas.h"
 #include "Plataforma.h"
 
 #include <QClipboard>
@@ -43,6 +44,7 @@ PaginaDescargas::PaginaDescargas(Tipo tipo, Herramientas *herramientas, QWidget 
     }
     ui->filaPlataforma->setVisible(!musica);
     ui->checkPlaylist->setVisible(musica);
+    ui->checkPistas->setVisible(!musica);
     ui->botonYoutubeMusic->setVisible(musica);
     ui->editCarpeta->setText(Almacenamiento + QStringLiteral("/Movies"));
     ui->filaCarpeta->setVisible(false);
@@ -124,6 +126,11 @@ QString PaginaDescargas::destino() const
     return ui->editCarpeta->text().trimmed();
 }
 
+QString PaginaDescargas::carpetaSubtitulos() const
+{
+    return QDir(herramientas->temporal()).filePath(QStringLiteral("subtitulos"));
+}
+
 QString PaginaDescargas::carpetaMiniaturas() const
 {
     return QDir(herramientas->temporal()).filePath(QStringLiteral("miniaturas"));
@@ -178,9 +185,13 @@ void PaginaDescargas::descargar()
         return;
     }
     QDir(carpetaMiniaturas()).removeRecursively();
+    QDir(carpetaSubtitulos()).removeRecursively();
     QDir().mkpath(carpetaMiniaturas());
 
     cola = urls;
+    urlsPedidas = urls;
+    eleccion = {};
+    oferta.limpiar();
     total = urls.size();
     indice = listas = fallidas = 0;
     cancelado = false;
@@ -200,6 +211,88 @@ void PaginaDescargas::descargar()
         proceso.start(herramientas->python(), {herramientas->argumentosYtDlp().constFirst(), QStringLiteral("--update")});
         return;
     }
+    empezar();
+}
+
+// Después de actualizar yt-dlp: en Vídeos, si se pidió, primero la consulta; si no, a descargar
+void PaginaDescargas::empezar()
+{
+    actualizando = false;
+    if (tipo == Tipo::Videos && ui->checkPistas->isChecked() && !cancelado) {
+        consultando = true;
+        indice = 0;
+        ui->barraArchivo->hide();
+        // La respuesta es JSON por la salida estándar: los avisos van aparte
+        proceso.setProcessChannelMode(QProcess::SeparateChannels);
+        siguienteConsulta();
+        return;
+    }
+    siguienteUrl();
+}
+
+// «yt-dlp -J» de la URL siguiente (lo que hace Descargar.sh --pistas en Linux)
+void PaginaDescargas::siguienteConsulta()
+{
+    if (cancelado) {
+        consultando = false;
+        proceso.setProcessChannelMode(QProcess::MergedChannels);
+        finalizar();
+        return;
+    }
+    const QString url = urlsPedidas.value(indice);
+    ++indice;
+    ui->barraTotal->setValue(indice - 1);
+    ui->etiquetaEstado->setText(tr("Buscando calidades, subtítulos y pistas de audio (URL %1 de %2)…").arg(indice).arg(total));
+    QStringList argumentos = herramientas->argumentosYtDlp();
+    argumentos << argumentosConsulta();
+    if (ui->checkCookies->isChecked())
+        argumentos << QStringLiteral("--cookies") << ui->editCookies->text().trimmed();
+    argumentos << QStringLiteral("--") << url;
+    proceso.start(herramientas->python(), argumentos);
+}
+
+void PaginaDescargas::terminoConsulta(int codigo, QProcess::ExitStatus estado)
+{
+    const QByteArray respuesta = proceso.readAllStandardOutput();
+    const QString errores = QString::fromUtf8(proceso.readAllStandardError());
+    if (!cancelado && (codigo != 0 || estado != QProcess::NormalExit || !oferta.agregar(respuesta))) {
+        static const QRegularExpression lineaError(QStringLiteral("^ERROR: (.*)$"), QRegularExpression::MultilineOption);
+        QString mensaje;
+        for (auto it = lineaError.globalMatch(errores); it.hasNext();)
+            mensaje = it.next().captured(1).trimmed();
+        anotar(tr("× No se pudo consultar %1: %2").arg(urlsPedidas.value(indice - 1),
+                                                       mensaje.isEmpty() ? tr("yt-dlp terminó con código %1").arg(codigo) : mensaje));
+        ++fallidas;
+    }
+    if (indice < total && !cancelado) {
+        siguienteConsulta();
+        return;
+    }
+
+    consultando = false;
+    proceso.setProcessChannelMode(QProcess::MergedChannels);
+    indice = 0;
+    if (cancelado || fallidas == total) {
+        // Si no se pudo consultar ninguna URL, tampoco se van a poder descargar
+        cola.clear();
+        finalizar();
+        return;
+    }
+    fallidas = 0;
+    if (oferta.vacia()) {
+        anotar(tr("No hay calidades, subtítulos ni otras pistas de audio para elegir: se descarga como siempre."));
+    } else {
+        ui->etiquetaEstado->setText(tr("Elegí la calidad, los códecs y qué subtítulos y pistas de audio incluir."));
+        DialogoPistas dialogo(oferta.audios.values(), oferta.subtitulos.values(), oferta.formatos, oferta.codecsAudio, this);
+        if (dialogo.abrir() != QDialog::Accepted) {
+            cancelado = true;
+            cola.clear();
+            finalizar();
+            return;
+        }
+        eleccion = dialogo.eleccion();
+    }
+    ui->barraArchivo->show();
     siguienteUrl();
 }
 
@@ -238,6 +331,9 @@ void PaginaDescargas::siguienteUrl()
         argumentos << QStringLiteral("-x");
         if (!ui->checkPlaylist->isChecked())
             argumentos << QStringLiteral("--no-playlist");
+    } else {
+        // MKV siempre; calidad, códecs, pistas y subtítulos si se eligieron
+        argumentos << argumentosEleccion(eleccion, carpetaSubtitulos());
     }
     if (ui->checkCookies->isChecked())
         argumentos << QStringLiteral("--cookies") << ui->editCookies->text().trimmed();
@@ -259,6 +355,8 @@ void PaginaDescargas::cancelar()
 
 void PaginaDescargas::leerSalida()
 {
+    if (consultando)
+        return;    // la respuesta de la consulta se lee entera al terminar
     while (proceso.canReadLine())
         procesarLinea(QString::fromUtf8(proceso.readLine()).trimmed());
 }
@@ -321,6 +419,10 @@ void PaginaDescargas::registrarTerminados(const QString &miniatura)
 
 void PaginaDescargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
 {
+    if (consultando) {
+        terminoConsulta(codigo, estado);
+        return;
+    }
     leerSalida();
     if (actualizando) {
         // Si no se pudo actualizar se sigue con la versión que hay
@@ -328,7 +430,7 @@ void PaginaDescargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
             herramientas->marcarYtDlpActualizado();
         else if (!cancelado)
             anotar(tr("No se pudo actualizar yt-dlp; se usa la versión instalada."));
-        siguienteUrl();
+        empezar();
         return;
     }
 
