@@ -40,3 +40,6 @@ log.txt
 # Binarios que arma nativos/Compilar-nativos.sh
 /nativos/rsync
 /nativos/dbclient
+
+# Lo compilado (APK, paquetes, .tar para Windows)
+/Salida/

@@ -32,8 +32,9 @@ fi
 cmake --build "$BUILD" --target apk
 
 SIN_FIRMAR="$BUILD/android-build/build/outputs/apk/release/android-build-release-unsigned.apk"
-"$HERRAMIENTAS/zipalign" -f -p 4 "$SIN_FIRMAR" Android-Manager.apk
-"$HERRAMIENTAS/apksigner" sign --ks "$CLAVE" --ks-pass "file:$CONTRASENA" Android-Manager.apk
-"$HERRAMIENTAS/apksigner" verify Android-Manager.apk
-rm -f Android-Manager.apk.idsig
-ls -la Android-Manager.apk
+mkdir -p Salida   # lo compilado queda en Salida/
+"$HERRAMIENTAS/zipalign" -f -p 4 "$SIN_FIRMAR" Salida/Android-Manager.apk
+"$HERRAMIENTAS/apksigner" sign --ks "$CLAVE" --ks-pass "file:$CONTRASENA" Salida/Android-Manager.apk
+"$HERRAMIENTAS/apksigner" verify Salida/Android-Manager.apk
+rm -f Salida/Android-Manager.apk.idsig
+ls -la Salida/Android-Manager.apk
