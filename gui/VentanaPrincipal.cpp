@@ -1,11 +1,16 @@
 #include "VentanaPrincipal.h"
 #include "ui_VentanaPrincipal.h"
 
+#include "Actualizaciones.h"
+#include "ConfigServidor.h"
 #include "PaginaDescargas.h"
 #include "PaginaRespaldo.h"
 #include "Plataforma.h"
 
 #include <QCloseEvent>
+#include <QDesktopServices>
+#include <QTimer>
+#include <QUrl>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMessageBox>
@@ -55,6 +60,23 @@ VentanaPrincipal::VentanaPrincipal(QWidget *parent)
     ui->etiquetaEstado->setText(tr("Preparando las herramientas (solo tarda la primera vez)…"));
     actualizarAcceso();
     herramientas.preparar();
+
+    // Datos del servidor (IPs, carpeta de respaldos) desde servidor.json, una vez por día
+    ConfigServidor::instancia().actualizar();
+
+    // ¿Hay una versión nueva en GitHub? (una vez por día)
+    auto *actualizaciones = new Actualizaciones(QStringLiteral("Sebas-Git-Tail/Android-Manager"), this);
+    connect(actualizaciones, &Actualizaciones::hayVersionNueva, this, [this](const QString &version, const QUrl &url) {
+        if (QMessageBox::question(this, windowTitle(),
+                tr("Hay una versión nueva de Android-Manager (%1). ¿Abrir la página para descargarla?").arg(version))
+            == QMessageBox::Yes)
+            QDesktopServices::openUrl(url);
+    });
+    actualizaciones->comprobar();
+
+    // Abierta desde la notificación del recordatorio: directo a Respaldo
+    if (Plataforma::paginaPedida() == u"respaldo")
+        QTimer::singleShot(0, this, [this] { mostrar(respaldo); });
 }
 
 VentanaPrincipal::~VentanaPrincipal()

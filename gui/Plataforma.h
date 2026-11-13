@@ -24,4 +24,10 @@ void avisarArchivoNuevo(const QString &ruta);
 void iniciarServicio(const QString &texto);
 void detenerServicio();
 
+// Recordatorio: una notificación si pasan «dias» desde el último respaldo (0 = no avisar)
+void programarRecordatorio(qint64 ultimoRespaldoMs, int dias);
+
+// Qué página pidió abrir la notificación que abrió la app («respaldo»), o vacío
+QString paginaPedida();
+
 }

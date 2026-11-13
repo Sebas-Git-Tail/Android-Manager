@@ -81,6 +81,26 @@ void iniciarServicio(const QString &texto)
     QJniEnvironment().checkAndClearExceptions();
 }
 
+void programarRecordatorio(qint64 ultimoRespaldoMs, int dias)
+{
+    QJniObject::callStaticMethod<void>("com/sebastian/androidmanager/Recordatorio", "programar",
+                                       "(Landroid/content/Context;JI)V", contexto().object(),
+                                       jlong(ultimoRespaldoMs), jint(dias));
+    QJniEnvironment().checkAndClearExceptions();
+}
+
+QString paginaPedida()
+{
+    const QJniObject actividad = QJniObject(QNativeInterface::QAndroidApplication::context());
+    const QJniObject intent = actividad.callObjectMethod("getIntent", "()Landroid/content/Intent;");
+    QString pagina;
+    if (intent.isValid())
+        pagina = intent.callObjectMethod("getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;",
+                                         cadena(QStringLiteral("pagina")).object<jstring>()).toString();
+    QJniEnvironment().checkAndClearExceptions();
+    return pagina;
+}
+
 void detenerServicio()
 {
     QJniObject::callStaticMethod<void>("com/sebastian/androidmanager/ServicioTarea", "detener",

@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("Android-Manager"));
+    QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     QApplication::setStyle(QStringLiteral("Fusion"));
     // El resaltado que da el sistema es muy claro para el texto blanco
     QPalette paleta = QApplication::palette();
