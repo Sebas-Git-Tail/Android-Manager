@@ -32,9 +32,14 @@ fi
 cmake --build "$BUILD" --target apk
 
 SIN_FIRMAR="$BUILD/android-build/build/outputs/apk/release/android-build-release-unsigned.apk"
-mkdir -p Salida   # lo compilado queda en Salida/
-"$HERRAMIENTAS/zipalign" -f -p 4 "$SIN_FIRMAR" Salida/Android-Manager.apk
-"$HERRAMIENTAS/apksigner" sign --ks "$CLAVE" --ks-pass "file:$CONTRASENA" Salida/Android-Manager.apk
-"$HERRAMIENTAS/apksigner" verify Salida/Android-Manager.apk
-rm -f Salida/Android-Manager.apk.idsig
-ls -la Salida/Android-Manager.apk
+VERSION=$(grep -oP "project\(\w+ VERSION \K[0-9.]+" gui/CMakeLists.txt)   # el nombre del APK lleva la versión
+APK="Salida/Android-Manager-$VERSION.apk"
+mkdir -p Salida   # lo compilado queda en Salida/ (la versión anterior pasa a ~/Repo/Legacy)
+for viejo in Salida/Android-Manager*.apk; do
+    if [ -e "$viejo" ] && [ "$viejo" != "$APK" ]; then mkdir -p ~/Repo/Legacy/Android-Manager && mv "$viejo" ~/Repo/Legacy/Android-Manager/; fi
+done
+"$HERRAMIENTAS/zipalign" -f -p 4 "$SIN_FIRMAR" "$APK"
+"$HERRAMIENTAS/apksigner" sign --ks "$CLAVE" --ks-pass "file:$CONTRASENA" "$APK"
+"$HERRAMIENTAS/apksigner" verify "$APK"
+rm -f "$APK".idsig
+ls -la "$APK"
