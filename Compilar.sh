@@ -1,0 +1,39 @@
+#!/bin/bash
+# Compila la versión final de la app y deja el APK firmado en esta carpeta. Antes hay que
+# correr Preparar-binarios.sh. Rutas por defecto: Qt 6.10.0 en ~/Qt y el SDK en ~/Android/Sdk.
+#
+# La clave de firma se crea la primera vez en ~/.android, fuera del proyecto. Hay que guardarle
+# una copia: Android solo acepta una actualización firmada con la misma clave; sin ella habría
+# que desinstalar la app en cada celular.
+set -euo pipefail
+cd "$(dirname "$(realpath "$0")")"
+QT="${QT:-$HOME/Qt/6.10.0}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk}"
+NDK=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
+HERRAMIENTAS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+BUILD="${BUILD:-build}"
+CLAVE="$HOME/.android/android-manager.keystore"
+CONTRASENA="$CLAVE.pass"
+
+if [[ ! -f "$CLAVE" ]]; then
+    ( umask 077; head -c 24 /dev/urandom | base64 > "$CONTRASENA" )
+    "$JAVA_HOME/bin/keytool" -genkeypair -keystore "$CLAVE" -storepass:file "$CONTRASENA" -alias android-manager \
+        -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Android-Manager"
+    chmod 600 "$CLAVE"
+fi
+
+"$QT/android_arm64_v8a/bin/qt-cmake" -B "$BUILD" -S gui -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DQT_HOST_PATH="$QT/gcc_64" \
+    -DANDROID_SDK_ROOT="$ANDROID_HOME" -DANDROID_NDK_ROOT="$NDK" \
+    -DQT_ANDROID_ABIS=arm64-v8a
+cmake --build "$BUILD" --target apk
+
+SIN_FIRMAR="$BUILD/android-build/build/outputs/apk/release/android-build-release-unsigned.apk"
+"$HERRAMIENTAS/zipalign" -f -p 4 "$SIN_FIRMAR" Android-Manager.apk
+"$HERRAMIENTAS/apksigner" sign --ks "$CLAVE" --ks-pass "file:$CONTRASENA" Android-Manager.apk
+"$HERRAMIENTAS/apksigner" verify Android-Manager.apk
+rm -f Android-Manager.apk.idsig
+ls -la Android-Manager.apk
