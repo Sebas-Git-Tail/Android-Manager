@@ -44,6 +44,8 @@ private:
     void anotar(const QString &texto);
     void mostrarResumen();
     void habilitarFormulario(bool habilitado);
+    void anotarRespaldoHecho();
+    QString textoUltimoRespaldo() const;
     void mostrarDescripcion();
     QString persona() const;       // normalizada; vacía si lo escrito no sirve como carpeta
     QString celular() const;       // vacío si lo escrito no sirve como carpeta

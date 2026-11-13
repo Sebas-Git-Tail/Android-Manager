@@ -1,9 +1,12 @@
 #include "PaginaRespaldo.h"
 #include "ui_PaginaRespaldo.h"
 
+#include "ConfigServidor.h"
 #include "Plataforma.h"
 
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFontMetrics>
 #include <QMessageBox>
 #include <QPushButton>
@@ -17,10 +20,13 @@
 
 namespace {
 
-// Los mismos datos que Common/Servidor.sh. Primero la red de casa y, si no contesta, Tailscale.
-const QStringList Servidores{QStringLiteral("192.168.100.14"), QStringLiteral("100.101.213.44")};
-const QString Usuario = QStringLiteral("sebastian");
-const QString CarpetaRespaldos = QStringLiteral("/home/sebastian/Respaldos/");
+// Datos del servidor: los de servidor.json (ConfigServidor, igual que Common/Servidor.sh en Linux).
+// Primero la red de casa y, si no contesta, Tailscale.
+QStringList servidores() { return ConfigServidor::instancia().ipsSsh(); }
+QString usuario() { return ConfigServidor::instancia().usuario(); }
+QString carpetaRespaldos() { return ConfigServidor::instancia().carpetaRespaldos(); }
+const QString ClaveUltimoRespaldo = QStringLiteral("respaldo/ultimo");
+constexpr int DiasRecordatorio = 7;
 const QString ClaveNombre = QStringLiteral("respaldo/nombre");
 const QString ClaveCelular = QStringLiteral("respaldo/celular");
 const QString ClaveDestinoConfirmado = QStringLiteral("respaldo/destinoConfirmado");
@@ -89,6 +95,7 @@ void PaginaRespaldo::mostrarDescripcion()
     ui->etiquetaDescripcion->setText(persona().isEmpty() || celular().isEmpty()
         ? tr("Copia el almacenamiento interno al servidor, a la carpeta de la persona. %1").arg(aviso)
         : tr("Copia el almacenamiento interno al servidor, a %1. %2").arg(rutaEnServidor(), aviso));
+    ui->etiquetaDescripcion->setText(ui->etiquetaDescripcion->text() + QStringLiteral("\n\n") + textoUltimoRespaldo());
 }
 
 // El nombre es una carpeta del servidor: nada de barras ni «..», que la sacarían de Respaldos
@@ -110,7 +117,7 @@ QString PaginaRespaldo::celular() const
 // La carpeta de destino lleva la persona y el nombre del celular
 QString PaginaRespaldo::rutaEnServidor() const
 {
-    return CarpetaRespaldos + persona() + u'/' + celular() + u'/';
+    return carpetaRespaldos() + persona() + u'/' + celular() + u'/';
 }
 
 // Se guardan apenas se escriben, para que sigan ahí al volver a abrir la app. Haberlos escrito
@@ -230,7 +237,7 @@ void PaginaRespaldo::empezar()
 // Prueba el puerto de SSH de cada dirección, en orden
 void PaginaRespaldo::probarServidor(int indice)
 {
-    if (cancelado || indice >= Servidores.size()) {
+    if (cancelado || indice >= servidores().size()) {
         ui->etiquetaEstado->setText(cancelado ? tr("Respaldo cancelado.")
                                               : tr("× No se encontró el servidor (ni en la red de casa ni por Tailscale)."));
         contrasena.clear();
@@ -254,19 +261,29 @@ void PaginaRespaldo::probarServidor(int indice)
         prueba->deleteLater();
         prueba = nullptr;
         if (cancelado)
-            probarServidor(Servidores.size());
+            probarServidor(servidores().size());
         else
-            copiar(Servidores.at(indice));
+            copiar(servidores().at(indice));
     });
     connect(prueba, &QTcpSocket::errorOccurred, this, fallo);
     connect(espera, &QTimer::timeout, this, fallo);
-    prueba->connectToHost(Servidores.at(indice), 22);
+    prueba->connectToHost(servidores().at(indice), 22);
     espera->start(EsperaServidorMs);
+}
+
+// known_hosts de dbclient (en $HOME/.ssh de la app) con las huellas del servidor para sus IPs
+static void escribirHuellas(const QString &home)
+{
+    QDir().mkpath(home + QStringLiteral("/.ssh"));
+    QFile archivo(home + QStringLiteral("/.ssh/known_hosts"));
+    if (archivo.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        archivo.write(ConfigServidor::huellasSsh(servidores()).join(u'\n').toUtf8() + '\n');
 }
 
 void PaginaRespaldo::copiar(const QString &servidor)
 {
-    if (servidor != Servidores.constFirst())
+    escribirHuellas(herramientas->ambiente().value(QStringLiteral("HOME")));
+    if (servidor != servidores().constFirst())
         anotar(tr("Conectando por Tailscale (%1).").arg(servidor));
     const bool simular = ui->checkSimular->isChecked();
     anotar(tr("%1 → %2:%3").arg(Origen, servidor, rutaEnServidor()));
@@ -275,8 +292,10 @@ void PaginaRespaldo::copiar(const QString &servidor)
     QStringList argumentos{QStringLiteral("-ah"), QStringLiteral("--info=progress2,name1"),
                            // sin esto, rsync escribe las tildes de los nombres como \\#303\\#261
                            QStringLiteral("-8"),
-                           // -y: la primera vez acepta la huella del servidor y después la exige igual
-                           QStringLiteral("-e"), herramientas->dbclient() + QStringLiteral(" -y"),
+                           // Sin -y: dbclient solo acepta al servidor si su huella está en known_hosts, y
+                           // ese archivo lo escribe escribirHuellas() con las huellas compiladas en la app
+                           // (antes la primera vez se aceptaba cualquiera y otro equipo podía recibir la contraseña)
+                           QStringLiteral("-e"), herramientas->dbclient(),
                            // la ruta puede tener espacios (el nombre del celular)
                            QStringLiteral("--protect-args"),
                            // la carpeta de la persona puede no existir todavía
@@ -288,7 +307,7 @@ void PaginaRespaldo::copiar(const QString &servidor)
         argumentos << QStringLiteral("--dry-run") << QStringLiteral("--itemize-changes") << QStringLiteral("--stats")
                    << QStringLiteral("--info=del1");
     }
-    argumentos << Origen << QStringLiteral("%1@%2:%3").arg(Usuario, servidor, rutaEnServidor());
+    argumentos << Origen << QStringLiteral("%1@%2:%3").arg(usuario(), servidor, rutaEnServidor());
 
     // dbclient toma la contraseña de esta variable: no aparece en la lista de procesos
     QProcessEnvironment variables = herramientas->ambiente();
@@ -367,24 +386,34 @@ void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
 
     // Tras varias contraseñas malas OpenSSH corta con «Disconnect received», antes de que llegue
     // ningún dato de rsync. Si corta en medio de la copia, en cambio, no es por la contraseña.
+    const bool huellaDistinta = errorConexion.contains(QStringLiteral("Host key verification"))
+                                || errorConexion.contains(QStringLiteral("host key"), Qt::CaseInsensitive);
     const bool contrasenaMala = errorConexion.contains(QStringLiteral("auth"), Qt::CaseInsensitive)
                              || errorConexion.contains(QStringLiteral("password"), Qt::CaseInsensitive)
                              || (sinDatos && errorConexion.contains(QStringLiteral("Disconnect received")));
     if (cancelado || estado == QProcess::CrashExit) {
         ui->etiquetaEstado->setText(tr("Respaldo cancelado."));
     } else if (codigo == 0) {
+        if (!ui->checkSimular->isChecked())
+            anotarRespaldoHecho();
         ui->barraProgreso->setValue(100);
         ui->etiquetaEstado->setText(ui->checkSimular->isChecked() ? tr("✓ Simulación completada: no se cambió nada.")
                                                                   : tr("✓ Respaldo completado."));
         if (ui->checkSimular->isChecked())
             mostrarResumen();
     } else if (codigo == 23 || codigo == 24) {
+        if (!ui->checkSimular->isChecked())
+            anotarRespaldoHecho();
         // Archivos que no se pudieron leer o que desaparecieron durante la copia
         ui->etiquetaEstado->setText(ui->checkSimular->isChecked()
             ? tr("Simulación completada, pero algunos archivos no se podrían copiar (ver los avisos).")
             : tr("Terminó, pero algunos archivos no se pudieron copiar (ver los avisos)."));
         if (ui->checkSimular->isChecked())
             mostrarResumen();
+    } else if (huellaDistinta) {
+        ui->barraProgreso->hide();
+        ui->etiquetaEstado->setText(tr("× Del otro lado contestó un equipo que no es el servidor (la huella no coincide). "
+                                       "No se mandó la contraseña. Si el servidor se reinstaló, hace falta una versión nueva del programa."));
     } else if (contrasenaMala) {
         ui->barraProgreso->hide();
         ui->etiquetaEstado->setText(tr("× Contraseña incorrecta, volvé a escribirla."));
@@ -413,4 +442,29 @@ void PaginaRespaldo::mostrarResumen()
         if (resumen.archivosABorrar() > lista.size())
             anotar(tr("  …y %1 más.").arg(resumen.archivosABorrar() - lista.size()));
     }
+}
+
+// Después de un respaldo (completo o con algunos archivos que no se pudieron leer): se guarda la
+// fecha y se programa el recordatorio para dentro de DiasRecordatorio días
+void PaginaRespaldo::anotarRespaldoHecho()
+{
+    const QDateTime ahora = QDateTime::currentDateTime();
+    QSettings(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat).setValue(ClaveUltimoRespaldo, ahora);
+    Plataforma::programarRecordatorio(ahora.toMSecsSinceEpoch(), DiasRecordatorio);
+    mostrarDescripcion();
+}
+
+// «Último respaldo: hace 3 días» (o nunca), debajo de la descripción
+QString PaginaRespaldo::textoUltimoRespaldo() const
+{
+    const QDateTime ultimo = QSettings(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat)
+                                 .value(ClaveUltimoRespaldo).toDateTime();
+    if (!ultimo.isValid())
+        return tr("Todavía no hiciste ningún respaldo desde esta app.");
+    const qint64 dias = ultimo.daysTo(QDateTime::currentDateTime());
+    if (dias == 0)
+        return tr("Último respaldo: hoy.");
+    if (dias == 1)
+        return tr("Último respaldo: ayer.");
+    return tr("Último respaldo: hace %1 días.").arg(dias);
 }
