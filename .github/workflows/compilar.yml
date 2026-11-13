@@ -1,0 +1,38 @@
+# Compila el APK (sin firmar y sin los binarios de Preparar-binarios.sh, que no están en git) en cada push,
+# para enterarse enseguida si algo no compila. Las pruebas del código compartido están en comun-qt.
+name: Compilar
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Qt de escritorio (hace falta para compilar para Android)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          cache: true
+      - name: Qt para Android
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: linux
+          target: android
+          arch: android_arm64_v8a
+          cache: true
+      - name: Compilar el APK
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        run: |
+          "$QT_ROOT_DIR/bin/qt-cmake" -B build -S gui -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQT_HOST_PATH="$(dirname "$QT_ROOT_DIR")/gcc_64" \
+            -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" -DANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME" \
+            -DQT_ANDROID_ABIS=arm64-v8a
+          cmake --build build --target apk
