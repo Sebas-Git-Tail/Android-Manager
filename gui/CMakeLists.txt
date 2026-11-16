@@ -2,7 +2,7 @@
 # Se compila con ../Compilar.sh. Los .ui se editan con Qt Designer.
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.2.0 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,7 @@ qt_standard_project_setup()
 # Su parte en Java (ClienteHttp) está enlazada en android/src/com/sebastian/comun.
 set(COMUN_DESCARGAS ON)
 set(COMUN_RED ON)
+set(COMUN_APPS_WIDGETS ON)   # actualizarse sola e instalar las otras apps (comun/apps)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../comun ${CMAKE_CURRENT_BINARY_DIR}/comun)
 
 qt_add_executable(Android-Manager
@@ -27,7 +28,7 @@ qt_add_executable(Android-Manager
     PaginaRespaldo.cpp PaginaRespaldo.h PaginaRespaldo.ui
 )
 qt_add_resources(Android-Manager "recursos" PREFIX "/" FILES Logo.png)
-target_link_libraries(Android-Manager PRIVATE Qt6::Widgets Qt6::Network comun_descargas comun_red)
+target_link_libraries(Android-Manager PRIVATE Qt6::Widgets Qt6::Network comun_descargas comun_red comun_apps_widgets)
 target_compile_definitions(Android-Manager PRIVATE VERSION_PROGRAMA="${PROJECT_VERSION}")
 
 # versionCode sale solo de la versión (1.2.0 → 10200): Android no instala una actualización con un

@@ -89,6 +89,13 @@
         </widget>
        </item>
        <item>
+        <widget class="QPushButton" name="botonApps">
+         <property name="text">
+          <string>Apps y actualizaciones</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="etiquetaEstado">
          <property name="wordWrap">
           <bool>true</bool>

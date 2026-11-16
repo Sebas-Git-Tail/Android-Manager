@@ -16,6 +16,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Volver a programar el recordatorio de respaldo después de reiniciar el celular -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Actualizarse e instalar las otras apps: abrir el instalador del sistema (comun: Instalador.java) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Para ver qué versión de las otras apps está instalada (Android 11+ las esconde si no) -->
+    <queries>
+        <package android:name="ar.gestorstock.app" />
+        <package android:name="ar.ingresosgastos.app" />
+    </queries>
     <supports-screens
         android:anyDensity="true"
         android:largeScreens="true"
@@ -69,6 +76,17 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/qtprovider_paths"/>
+        </provider>
+        <!-- Comparte el APK descargado con el instalador (res/xml/rutas_archivos.xml, de comun).
+             Clase propia para no chocar con el FileProvider de Qt (qtprovider). -->
+        <provider
+            android:name="com.sebastian.comun.ProveedorArchivos"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rutas_archivos" />
         </provider>
     </application>
 </manifest>

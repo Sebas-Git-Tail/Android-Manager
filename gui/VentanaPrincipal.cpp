@@ -1,7 +1,7 @@
 #include "VentanaPrincipal.h"
 #include "ui_VentanaPrincipal.h"
 
-#include "Actualizaciones.h"
+#include "PanelApps.h"
 #include "ConfigServidor.h"
 #include "PaginaDescargas.h"
 #include "PaginaRespaldo.h"
@@ -35,6 +35,10 @@ VentanaPrincipal::VentanaPrincipal(QWidget *parent)
     ui->paginas->addWidget(videos);
     ui->paginas->addWidget(musica);
     ui->paginas->addWidget(respaldo);
+    // «Apps»: actualizar Android-Manager e instalar las otras apps (comun/apps)
+    auto *paginaApps = new apps::PanelApps(QStringLiteral("Android-Manager"), this);
+    ui->paginas->addWidget(paginaApps);
+    connect(ui->botonApps, &QPushButton::clicked, this, [this, paginaApps] { mostrar(paginaApps); });
 
     connect(ui->botonVideos, &QPushButton::clicked, this, [this] { mostrar(videos); });
     connect(ui->botonMusica, &QPushButton::clicked, this, [this] { mostrar(musica); });
@@ -64,15 +68,8 @@ VentanaPrincipal::VentanaPrincipal(QWidget *parent)
     // Datos del servidor (IPs, carpeta de respaldos) desde servidor.json, una vez por día
     ConfigServidor::instancia().actualizar();
 
-    // ¿Hay una versión nueva en GitHub? (una vez por día)
-    auto *actualizaciones = new Actualizaciones(QStringLiteral("Sebas-Git-Tail/Android-Manager"), this);
-    connect(actualizaciones, &Actualizaciones::hayVersionNueva, this, [this](const QString &version, const QUrl &url) {
-        if (QMessageBox::question(this, windowTitle(),
-                tr("Hay una versión nueva de Android-Manager (%1). ¿Abrir la página para descargarla?").arg(version))
-            == QMessageBox::Yes)
-            QDesktopServices::openUrl(url);
-    });
-    actualizaciones->comprobar();
+    // ¿Hay una versión nueva? (una vez por día): pregunta, la baja y abre el instalador de Android
+    apps::avisarActualizaciones(this, QStringLiteral("Android-Manager"));
 
     // Abierta desde la notificación del recordatorio: directo a Respaldo
     if (Plataforma::paginaPedida() == u"respaldo")
