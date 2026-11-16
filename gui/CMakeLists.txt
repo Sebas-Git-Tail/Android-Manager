@@ -2,7 +2,7 @@
 # Se compila con ../Compilar.sh. Los .ui se editan con Qt Designer.
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.3.2 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.3.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
