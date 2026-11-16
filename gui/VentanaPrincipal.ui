@@ -89,10 +89,18 @@
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="botonApps">
-         <property name="text">
-          <string>Apps y actualizaciones</string>
-         </property>
+        <!-- En su propio contenedor (mismo margen que grupoHerramientas): tiene que andar aunque las
+             herramientas no estén listas, para poder actualizar la app -->
+        <widget class="QWidget" name="grupoApps" native="true">
+         <layout class="QVBoxLayout" name="layoutApps">
+          <item>
+           <widget class="QPushButton" name="botonApps">
+            <property name="text">
+             <string>Apps y actualizaciones</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
        <item>

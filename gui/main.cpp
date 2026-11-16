@@ -1,6 +1,7 @@
 // Android-Manager: descargas de videos y música con yt-dlp, y respaldo del celular con rsync.
 
 #include "VentanaPrincipal.h"
+#include "Traducciones.h"
 
 #include <QApplication>
 #include <QPalette>
@@ -12,6 +13,8 @@ int main(int argc, char *argv[])
     qputenv("QT_BLOCK_EVENT_LOOPS_WHEN_SUSPENDED", "0");
 
     QApplication app(argc, argv);
+
+    apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setApplicationName(QStringLiteral("Android-Manager"));
     QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     QApplication::setStyle(QStringLiteral("Fusion"));
