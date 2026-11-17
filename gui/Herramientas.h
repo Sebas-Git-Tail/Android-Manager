@@ -12,12 +12,17 @@
 class Herramientas : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool listas READ listas NOTIFY estadoCambio)
+    Q_PROPERTY(bool preparando READ preparando NOTIFY estadoCambio)
+    Q_PROPERTY(QString error READ error NOTIFY estadoCambio)        // por qué no se pudieron preparar
 
 public:
     explicit Herramientas(QObject *parent = nullptr);
 
     void preparar();
     bool listas() const { return preparadas; }
+    bool preparando() const { return preparando_; }
+    QString error() const { return error_; }
 
     QProcessEnvironment ambiente() const;
     QString temporal() const;
@@ -35,6 +40,7 @@ public:
 
 signals:
     void preparacionTerminada(bool bien, const QString &error);
+    void estadoCambio();
 
 private:
     void terminarPreparacion();
@@ -44,4 +50,6 @@ private:
 
     QProcess descompresor;
     bool preparadas = false;
+    bool preparando_ = false;
+    QString error_;
 };

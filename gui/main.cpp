@@ -1,10 +1,19 @@
 // Android-Manager: descargas de videos y música con yt-dlp, y respaldo del celular con rsync.
+// La interfaz es QML con el estilo Material (como Ingresos y Gastos y el Gestor de Stock); la
+// lógica está en Descargas, Respaldo, Herramientas y Sistema, que QML ve como objetos globales.
 
-#include "VentanaPrincipal.h"
+#include "ConfigServidor.h"
+#include "Descargas.h"
+#include "Herramientas.h"
+#include "ModeloApps.h"
+#include "Respaldo.h"
+#include "Sistema.h"
 #include "Traducciones.h"
 
-#include <QApplication>
-#include <QPalette>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
 
 int main(int argc, char *argv[])
 {
@@ -12,28 +21,38 @@ int main(int argc, char *argv[])
     // quedarían esperando (nadie leería la salida de yt-dlp y rsync)
     qputenv("QT_BLOCK_EVENT_LOOPS_WHEN_SUSPENDED", "0");
 
-    QApplication app(argc, argv);
-
+    QGuiApplication app(argc, argv);
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
-    QApplication::setApplicationName(QStringLiteral("Android-Manager"));
-    QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
-    QApplication::setStyle(QStringLiteral("Fusion"));
-    // El resaltado que da el sistema es muy claro para el texto blanco
-    QPalette paleta = QApplication::palette();
-    paleta.setColor(QPalette::Highlight, QColor(0x2a, 0x6f, 0xb5));
-    paleta.setColor(QPalette::HighlightedText, Qt::white);
-    // Al definir una paleta propia, lo deshabilitado deja de verse apagado si no se lo indica
-    for (const QPalette::ColorRole rol : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
-        paleta.setColor(QPalette::Disabled, rol, QColor(0x80, 0x80, 0x80));
-    QApplication::setPalette(paleta);
+    QGuiApplication::setApplicationName(QStringLiteral("Android-Manager"));
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("Android-Manager"));
+    QGuiApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
+    QQuickStyle::setStyle(QStringLiteral("Material"));
 
-    // Botones y casillas de un tamaño cómodo para tocar con el dedo
-    app.setStyleSheet(QStringLiteral(
-        "QPushButton, QComboBox, QLineEdit { min-height: 40px; }"
-        "QCheckBox { min-height: 36px; }"
-        "QCheckBox::indicator { width: 24px; height: 24px; }"));
+    Herramientas herramientas;
+    Descargas videos(Descargas::Tipo::Videos, &herramientas);
+    Descargas musica(Descargas::Tipo::Musica, &herramientas);
+    Respaldo respaldo(&herramientas);
+    Sistema sistema(&videos, &musica, &respaldo);
+    // «Apps y actualizaciones» (comun/apps): versión nueva de esta app y las otras para instalar
+    auto *modeloApps = new apps::ModeloApps(QStringLiteral("Android-Manager"), &app);   // vive más que el motor de QML
 
-    VentanaPrincipal ventana;
-    ventana.showMaximized();
-    return app.exec();
+    QQmlApplicationEngine motor;
+    QQmlContext *contexto = motor.rootContext();
+    contexto->setContextProperty(QStringLiteral("Herramientas"), &herramientas);
+    contexto->setContextProperty(QStringLiteral("Videos"), &videos);
+    contexto->setContextProperty(QStringLiteral("Musica"), &musica);
+    contexto->setContextProperty(QStringLiteral("Respaldo"), &respaldo);
+    contexto->setContextProperty(QStringLiteral("Sistema"), &sistema);
+    contexto->setContextProperty(QStringLiteral("Apps"), modeloApps);
+    QObject::connect(&motor, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); },
+                     Qt::QueuedConnection);
+    motor.loadFromModule("AndroidManager", "Main");
+
+    herramientas.preparar();
+    // Datos del servidor (IPs, carpeta de respaldos) desde servidor.json, una vez por día
+    ConfigServidor::instancia().actualizar();
+
+    const int codigo = app.exec();
+    sistema.cancelarTodo();    // si se sale con algo en curso, que no queden procesos sueltos
+    return codigo;
 }

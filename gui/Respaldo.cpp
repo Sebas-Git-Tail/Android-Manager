@@ -1,15 +1,12 @@
-#include "PaginaRespaldo.h"
-#include "ui_PaginaRespaldo.h"
+#include "Respaldo.h"
 
 #include "ConfigServidor.h"
 #include "Plataforma.h"
+#include "Rutas.h"
 
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
-#include <QFontMetrics>
-#include <QMessageBox>
-#include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QTcpSocket>
@@ -33,217 +30,215 @@ const QString ClaveDestinoConfirmado = QStringLiteral("respaldo/destinoConfirmad
 const QString Origen = QStringLiteral("/sdcard/");
 constexpr int EsperaServidorMs = 2000;
 
-const QString ArchivoAjustes = QStringLiteral("Android-Manager.ini");
+QSettings ajustes()
+{
+    return QSettings(archivoAjustes(), QSettings::IniFormat);
+}
 
 } // namespace
 
-PaginaRespaldo::PaginaRespaldo(Herramientas *herramientas, QWidget *parent)
-    : QWidget(parent), ui(new Ui::PaginaRespaldo), herramientas(herramientas)
+Respaldo::Respaldo(Herramientas *herramientas, QObject *parent)
+    : QObject(parent), herramientas(herramientas)
 {
-    ui->setupUi(this);
-    setWindowTitle(tr("Respaldo"));
-    ui->barraProgreso->hide();
-
-    const QSettings ajustes(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat);
-    ui->editPersona->setText(ajustes.value(ClaveNombre).toString());
-    ui->editPersona->setInputMethodHints(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText);
+    const QSettings guardados(archivoAjustes(), QSettings::IniFormat);
+    persona_ = guardados.value(ClaveNombre).toString();
     // Se propone el nombre del dispositivo, pero una vez guardado es fijo: si cambiara solo
     // cuando alguien renombra el celular en Ajustes, el respaldo empezaría en otra carpeta
-    ui->editCelular->setText(ajustes.value(ClaveCelular, Plataforma::nombreDispositivo()).toString());
-    ui->editCelular->setInputMethodHints(Qt::ImhNoPredictiveText);
-    const auto alEditar = [this] {
-        mostrarDescripcion();
-        guardarNombres();
-    };
-    connect(ui->editPersona, &QLineEdit::textChanged, this, alEditar);
-    connect(ui->editCelular, &QLineEdit::textChanged, this, alEditar);
-
-    connect(ui->botonEmpezar, &QPushButton::clicked, this, &PaginaRespaldo::empezar);
-    connect(ui->editContrasena, &QLineEdit::returnPressed, this, &PaginaRespaldo::empezar);
-    connect(ui->botonCancelar, &QPushButton::clicked, this, &PaginaRespaldo::cancelar);
+    celular_ = guardados.value(ClaveCelular, Plataforma::nombreDispositivo()).toString();
 
     proceso.setProcessChannelMode(QProcess::MergedChannels);
     // rsync y dbclient en su propio grupo: Cancelar los corta a los dos
     proceso.setChildProcessModifier([] { setpgid(0, 0); });
-    connect(&proceso, &QProcess::readyReadStandardOutput, this, &PaginaRespaldo::leerSalida);
-    connect(&proceso, &QProcess::finished, this, &PaginaRespaldo::terminoProceso);
+    connect(&proceso, &QProcess::readyReadStandardOutput, this, &Respaldo::leerSalida);
+    connect(&proceso, &QProcess::finished, this, &Respaldo::terminoProceso);
     connect(&proceso, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;
-        ui->etiquetaEstado->setText(tr("× No se pudo ejecutar rsync: %1").arg(proceso.errorString()));
-        trabajando = false;
-        habilitarFormulario(true);
+        ponerEstado(tr("No se pudo ejecutar rsync: %1").arg(proceso.errorString()), Error);
+        ponerProgreso(-1, {});
+        ponerTrabajando(false);
     });
 }
 
-PaginaRespaldo::~PaginaRespaldo()
+void Respaldo::ponerPersona(const QString &texto)
 {
-    delete ui;
+    if (texto == persona_)
+        return;
+    persona_ = texto;
+    guardarNombres();
+    emit nombresCambio();
 }
 
-void PaginaRespaldo::showEvent(QShowEvent *evento)
+void Respaldo::ponerCelular(const QString &texto)
 {
-    QWidget::showEvent(evento);
-    mostrarDescripcion();
-    if (!trabajando && !herramientas->respaldoDisponible())
-        ui->etiquetaEstado->setText(tr("× Esta versión de la app no incluye rsync ni el cliente SSH."));
-}
-
-void PaginaRespaldo::mostrarDescripcion()
-{
-    const QString aviso = tr("Sin Android/data ni Android/obb. Lo que borraste del celular también se borra del respaldo.");
-    ui->etiquetaDescripcion->setText(persona().isEmpty() || celular().isEmpty()
-        ? tr("Copia el almacenamiento interno al servidor, a la carpeta de la persona. %1").arg(aviso)
-        : tr("Copia el almacenamiento interno al servidor, a %1. %2").arg(rutaEnServidor(), aviso));
-    ui->etiquetaDescripcion->setText(ui->etiquetaDescripcion->text() + QStringLiteral("\n\n") + textoUltimoRespaldo());
+    if (texto == celular_)
+        return;
+    celular_ = texto;
+    guardarNombres();
+    emit nombresCambio();
 }
 
 // El nombre es una carpeta del servidor: nada de barras ni «..», que la sacarían de Respaldos
-QString PaginaRespaldo::persona() const
+QString Respaldo::persona() const
 {
     static const QRegularExpression valida(QStringLiteral("^[a-z0-9][a-z0-9._-]*$"));
-    const QString nombre = ui->editPersona->text().trimmed().toLower();    // las carpetas van en minúsculas
+    const QString nombre = persona_.trimmed().toLower();    // las carpetas van en minúsculas
     return valida.match(nombre).hasMatch() ? nombre : QString();
 }
 
 // Admite espacios y mayúsculas (Galaxy S22), pero no puede salirse de la carpeta de la persona
-QString PaginaRespaldo::celular() const
+QString Respaldo::celular() const
 {
     static const QRegularExpression valido(QStringLiteral("^[^/\\\\.\\p{Cc}][^/\\\\\\p{Cc}]*$"));
-    const QString nombre = ui->editCelular->text().trimmed();
+    const QString nombre = celular_.trimmed();
     return valido.match(nombre).hasMatch() ? nombre : QString();
 }
 
 // La carpeta de destino lleva la persona y el nombre del celular
-QString PaginaRespaldo::rutaEnServidor() const
+QString Respaldo::rutaEnServidor() const
 {
     return carpetaRespaldos() + persona() + u'/' + celular() + u'/';
 }
 
+QString Respaldo::destino() const
+{
+    return persona().isEmpty() || celular().isEmpty() ? QString() : rutaEnServidor();
+}
+
 // Se guardan apenas se escriben, para que sigan ahí al volver a abrir la app. Haberlos escrito
-// no confirma el destino: eso lo hace confirmarDestino() antes de la primera copia real.
-void PaginaRespaldo::guardarNombres()
+// no confirma el destino: eso se pregunta antes de la primera copia real.
+void Respaldo::guardarNombres()
 {
-    QSettings ajustes(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat);
+    QSettings guardados = ajustes();
     if (persona().isEmpty())
-        ajustes.remove(ClaveNombre);
+        guardados.remove(ClaveNombre);
     else
-        ajustes.setValue(ClaveNombre, persona());
+        guardados.setValue(ClaveNombre, persona());
     if (celular().isEmpty())
-        ajustes.remove(ClaveCelular);
+        guardados.remove(ClaveCelular);
     else
-        ajustes.setValue(ClaveCelular, celular());
+        guardados.setValue(ClaveCelular, celular());
 }
 
-// Por --delete, respaldar en la carpeta equivocada borraría lo que haya allí. Se confirma cada
-// vez que el destino cambia (la primera vez incluida), y queda guardado al aceptarlo.
-bool PaginaRespaldo::confirmarDestino()
-{
-    QSettings ajustes(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat);
-    if (ajustes.value(ClaveDestinoConfirmado).toString() == rutaEnServidor())
-        return true;
-    QMessageBox caja(QMessageBox::Warning, windowTitle(),
-                     tr("El respaldo va a ir a:\n%1\n\nLo que haya en esa carpeta y no esté en este celular se va a borrar. ¿Es correcto?")
-                         .arg(rutaEnServidor()), QMessageBox::NoButton, this);
-    const QPushButton *si = caja.addButton(tr("Sí, respaldar"), QMessageBox::AcceptRole);
-    caja.setDefaultButton(caja.addButton(tr("No"), QMessageBox::RejectRole));
-    caja.exec();
-    if (caja.clickedButton() != si)
-        return false;
-    ajustes.setValue(ClaveDestinoConfirmado, rutaEnServidor());
-    return true;
-}
-
-bool PaginaRespaldo::ocupada() const
-{
-    return trabajando;
-}
-
-void PaginaRespaldo::cancelarYEsperar()
+void Respaldo::cancelarYEsperar()
 {
     cancelar();
     proceso.waitForFinished(3000);
 }
 
-void PaginaRespaldo::habilitarFormulario(bool habilitado)
+void Respaldo::ponerTrabajando(bool valor)
 {
-    ui->grupoPersona->setEnabled(habilitado);
-    ui->grupoCelular->setEnabled(habilitado);
-    ui->grupoContrasena->setEnabled(habilitado);
-    ui->checkSimular->setEnabled(habilitado);
-    ui->botonEmpezar->setEnabled(habilitado);
-    ui->botonCancelar->setEnabled(!habilitado);
-    emit ocupacionCambiada();
+    if (trabajando == valor)
+        return;
+    trabajando = valor;
+    emit ocupadaCambio();
 }
 
-void PaginaRespaldo::anotar(const QString &texto)
+void Respaldo::ponerEstado(const QString &texto, TipoEstado tipo)
 {
-    ui->registro->appendPlainText(texto);
+    estado_ = texto;
+    tipoEstado_ = tipo;
+    emit estadoCambio();
 }
 
-void PaginaRespaldo::empezar()
+void Respaldo::ponerProgreso(int progreso, const QString &archivo)
+{
+    progreso_ = progreso;
+    archivo_ = archivo;
+    emit progresoCambio();
+}
+
+void Respaldo::anotar(const QString &texto)
+{
+    avisos_ << texto;
+    emit avisosCambio();
+}
+
+void Respaldo::limpiarAvisos()
+{
+    avisos_.clear();
+    emit avisosCambio();
+}
+
+void Respaldo::empezar(const QString &contrasenaEscrita)
 {
     if (trabajando)
         return;
-    if (!herramientas->respaldoDisponible()) {
-        ui->etiquetaEstado->setText(tr("× Esta versión de la app no incluye rsync ni el cliente SSH."));
+    if (!disponible()) {
+        ponerEstado(tr("Esta versión de la app no incluye rsync ni el cliente SSH."), Error);
         return;
     }
     if (persona().isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Escribí de quién es el celular: una palabra, con letras, números, punto o guion."));
-        ui->editPersona->setFocus();
+        ponerEstado(tr("Escribí de quién es el celular: una palabra, con letras, números, punto o guion."), Error);
+        emit enfocar(QStringLiteral("persona"));
         return;
     }
     if (celular().isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Escribí un nombre para el celular, sin barras y sin empezar con un punto."));
-        ui->editCelular->setFocus();
+        ponerEstado(tr("Escribí un nombre para el celular, sin barras y sin empezar con un punto."), Error);
+        emit enfocar(QStringLiteral("celular"));
         return;
     }
-    contrasena = ui->editContrasena->text();
-    if (contrasena.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Escribí la contraseña SSH del servidor."));
-        ui->editContrasena->setFocus();
+    if (contrasenaEscrita.isEmpty()) {
+        ponerEstado(tr("Escribí la contraseña SSH del servidor."), Error);
+        emit enfocar(QStringLiteral("contrasena"));
         return;
     }
     // Con --delete, un origen que se ve vacío borraría todo el respaldo del servidor
     if (!Plataforma::tieneAccesoArchivos()
         || QDir(Origen).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
-        ui->etiquetaEstado->setText(tr("× La app no puede leer el almacenamiento: falta dar acceso a los archivos (botón en la portada)."));
+        ponerEstado(tr("La app no puede leer el almacenamiento: falta dar acceso a los archivos (botón en la portada)."), Error);
         return;
     }
-    ui->etiquetaEstado->clear();
+    ponerEstado({});
+    contrasena = contrasenaEscrita;
+    simulando = simular_;
     // Una simulación no toca nada: ni pregunta ni guarda el destino
-    if (!ui->checkSimular->isChecked() && !confirmarDestino()) {
+    if (!simulando && ajustes().value(ClaveDestinoConfirmado).toString() != rutaEnServidor()) {
+        emit pedirConfirmacion(rutaEnServidor());
+        return;
+    }
+    continuar();
+}
+
+void Respaldo::confirmarDestino(bool aceptado)
+{
+    if (trabajando || contrasena.isEmpty())
+        return;
+    if (!aceptado) {
         contrasena.clear();
         return;
     }
-    ui->editContrasena->clear();    // no queda escrita en la ventana
+    ajustes().setValue(ClaveDestinoConfirmado, rutaEnServidor());
+    continuar();
+}
 
+void Respaldo::continuar()
+{
+    emit contrasenaUsada();    // no queda escrita en la página
     cancelado = false;
     errorConexion.clear();
     sinDatos = false;
     pendiente.clear();
     resumen = ResumenSimulacion();
-    ui->registro->clear();
-    ui->etiquetaArchivo->clear();
-    ui->barraProgreso->setValue(0);
-    ui->barraProgreso->show();
-    ui->etiquetaEstado->setText(tr("Buscando el servidor…"));
-    trabajando = true;
-    habilitarFormulario(false);
+    avisos_.clear();
+    emit avisosCambio();
+    ponerProgreso(0, {});
+    ponerEstado(tr("Buscando el servidor…"));
+    ponerTrabajando(true);
     probarServidor(0);
 }
 
 // Prueba el puerto de SSH de cada dirección, en orden
-void PaginaRespaldo::probarServidor(int indice)
+void Respaldo::probarServidor(int indice)
 {
     if (cancelado || indice >= servidores().size()) {
-        ui->etiquetaEstado->setText(cancelado ? tr("Respaldo cancelado.")
-                                              : tr("× No se encontró el servidor (ni en la red de casa ni por Tailscale)."));
+        if (cancelado)
+            ponerEstado(tr("Respaldo cancelado."));
+        else
+            ponerEstado(tr("No se encontró el servidor (ni en la red de casa ni por Tailscale)."), Error);
         contrasena.clear();
-        ui->barraProgreso->hide();
-        trabajando = false;
-        habilitarFormulario(true);
+        ponerProgreso(-1, {});
+        ponerTrabajando(false);
         return;
     }
     prueba = new QTcpSocket(this);
@@ -261,7 +256,7 @@ void PaginaRespaldo::probarServidor(int indice)
         prueba->deleteLater();
         prueba = nullptr;
         if (cancelado)
-            probarServidor(servidores().size());
+            probarServidor(int(servidores().size()));
         else
             copiar(servidores().at(indice));
     });
@@ -280,14 +275,13 @@ static void escribirHuellas(const QString &home)
         archivo.write(ConfigServidor::huellasSsh(servidores()).join(u'\n').toUtf8() + '\n');
 }
 
-void PaginaRespaldo::copiar(const QString &servidor)
+void Respaldo::copiar(const QString &servidor)
 {
     escribirHuellas(herramientas->ambiente().value(QStringLiteral("HOME")));
     if (servidor != servidores().constFirst())
         anotar(tr("Conectando por Tailscale (%1).").arg(servidor));
-    const bool simular = ui->checkSimular->isChecked();
     anotar(tr("%1 → %2:%3").arg(Origen, servidor, rutaEnServidor()));
-    ui->etiquetaEstado->setText(simular ? tr("Simulando el respaldo (no cambia nada)…") : tr("Respaldando…"));
+    ponerEstado(simulando ? tr("Simulando el respaldo (no cambia nada)…") : tr("Respaldando…"));
 
     QStringList argumentos{QStringLiteral("-ah"), QStringLiteral("--info=progress2,name1"),
                            // sin esto, rsync escribe las tildes de los nombres como \\#303\\#261
@@ -303,7 +297,7 @@ void PaginaRespaldo::copiar(const QString &servidor)
                            QStringLiteral("--exclude"), QStringLiteral("Android/obb"),
                            QStringLiteral("--exclude"), QStringLiteral("Android/data"),
                            QStringLiteral("--delete")};
-    if (simular) {
+    if (simulando) {
         argumentos << QStringLiteral("--dry-run") << QStringLiteral("--itemize-changes") << QStringLiteral("--stats")
                    << QStringLiteral("--info=del1");
     }
@@ -318,18 +312,18 @@ void PaginaRespaldo::copiar(const QString &servidor)
     proceso.setProcessEnvironment(herramientas->ambiente());    // no queda guardada
 }
 
-void PaginaRespaldo::cancelar()
+void Respaldo::cancelar()
 {
     if (!trabajando)
         return;
     cancelado = true;
-    ui->etiquetaEstado->setText(tr("Cancelando…"));
+    ponerEstado(tr("Cancelando…"));
     if (proceso.state() != QProcess::NotRunning)
         ::kill(-static_cast<pid_t>(proceso.processId()), SIGTERM);
 }
 
 // rsync separa las actualizaciones de progreso con \r y el resto con \n
-void PaginaRespaldo::leerSalida()
+void Respaldo::leerSalida()
 {
     pendiente += proceso.readAll();
     qsizetype inicio = 0;
@@ -342,18 +336,18 @@ void PaginaRespaldo::leerSalida()
     pendiente.remove(0, inicio);
 }
 
-void PaginaRespaldo::procesarLinea(const QString &linea)
+void Respaldo::procesarLinea(const QString &linea)
 {
     // «2.00MB  99%  2.00GB/s ...»: anclada, porque un archivo puede llamarse «99% seguro.txt»
     static const QRegularExpression progreso(QStringLiteral("^\\S+\\s+(\\d+)%\\s"));
     if (linea.isEmpty())
         return;
-    if (ui->checkSimular->isChecked() && resumen.procesar(linea))
+    if (simulando && resumen.procesar(linea))
         return;
 
     const QRegularExpressionMatch coincidencia = progreso.match(linea);
     if (coincidencia.hasMatch()) {
-        ui->barraProgreso->setValue(coincidencia.captured(1).toInt());
+        ponerProgreso(coincidencia.captured(1).toInt(), archivo_);
     } else if (linea.startsWith(herramientas->dbclient())) {
         // dbclient empieza sus mensajes con su ruta, que es larguísima
         const QString mensaje = linea.mid(herramientas->dbclient().size() + 1).trimmed();
@@ -367,22 +361,19 @@ void PaginaRespaldo::procesarLinea(const QString &linea)
         if (linea.contains(QStringLiteral("(0 bytes received so far)")))
             sinDatos = true;
         anotar(linea);
-    } else if (ui->checkSimular->isChecked()) {
+    } else if (simulando) {
         // El resto son las estadísticas de rsync, que no son nombres de archivo
     } else if (linea != QStringLiteral("sending incremental file list") && !linea.startsWith(QStringLiteral("sent "))
                && !linea.startsWith(QStringLiteral("total size")) && linea != QStringLiteral("./")) {
-        // El nombre se recorta por el medio para que entre en una línea
-        const QFontMetrics medidas(ui->etiquetaArchivo->font());
-        ui->etiquetaArchivo->setText(medidas.elidedText(linea, Qt::ElideMiddle, ui->etiquetaArchivo->width()));
+        ponerProgreso(progreso_, linea);    // la página lo recorta por el medio
     }
 }
 
-void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
+void Respaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
 {
     leerSalida();
-    trabajando = false;
-    habilitarFormulario(true);
-    ui->etiquetaArchivo->clear();
+    ponerTrabajando(false);
+    archivo_.clear();
 
     // Tras varias contraseñas malas OpenSSH corta con «Disconnect received», antes de que llegue
     // ningún dato de rsync. Si corta en medio de la copia, en cambio, no es por la contraseña.
@@ -392,38 +383,39 @@ void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
                              || errorConexion.contains(QStringLiteral("password"), Qt::CaseInsensitive)
                              || (sinDatos && errorConexion.contains(QStringLiteral("Disconnect received")));
     if (cancelado || estado == QProcess::CrashExit) {
-        ui->etiquetaEstado->setText(tr("Respaldo cancelado."));
+        ponerProgreso(-1, {});
+        ponerEstado(tr("Respaldo cancelado."));
     } else if (codigo == 0) {
-        if (!ui->checkSimular->isChecked())
+        if (!simulando)
             anotarRespaldoHecho();
-        ui->barraProgreso->setValue(100);
-        ui->etiquetaEstado->setText(ui->checkSimular->isChecked() ? tr("✓ Simulación completada: no se cambió nada.")
-                                                                  : tr("✓ Respaldo completado."));
-        if (ui->checkSimular->isChecked())
+        ponerProgreso(100, {});
+        ponerEstado(simulando ? tr("Simulación completada: no se cambió nada.") : tr("Respaldo completado."), Exito);
+        if (simulando)
             mostrarResumen();
     } else if (codigo == 23 || codigo == 24) {
-        if (!ui->checkSimular->isChecked())
+        if (!simulando)
             anotarRespaldoHecho();
         // Archivos que no se pudieron leer o que desaparecieron durante la copia
-        ui->etiquetaEstado->setText(ui->checkSimular->isChecked()
-            ? tr("Simulación completada, pero algunos archivos no se podrían copiar (ver los avisos).")
-            : tr("Terminó, pero algunos archivos no se pudieron copiar (ver los avisos)."));
-        if (ui->checkSimular->isChecked())
+        ponerProgreso(100, {});
+        ponerEstado(simulando ? tr("Simulación completada, pero algunos archivos no se podrían copiar (ver los avisos).")
+                              : tr("Terminó, pero algunos archivos no se pudieron copiar (ver los avisos)."), Error);
+        if (simulando)
             mostrarResumen();
     } else if (huellaDistinta) {
-        ui->barraProgreso->hide();
-        ui->etiquetaEstado->setText(tr("× Del otro lado contestó un equipo que no es el servidor (la huella no coincide). "
-                                       "No se mandó la contraseña. Si el servidor se reinstaló, hace falta una versión nueva del programa."));
+        ponerProgreso(-1, {});
+        ponerEstado(tr("Del otro lado contestó un equipo que no es el servidor (la huella no coincide). No se mandó la "
+                       "contraseña. Si el servidor se reinstaló, hace falta una versión nueva del programa."), Error);
     } else if (contrasenaMala) {
-        ui->barraProgreso->hide();
-        ui->etiquetaEstado->setText(tr("× Contraseña incorrecta, volvé a escribirla."));
-        ui->editContrasena->setFocus();
+        ponerProgreso(-1, {});
+        ponerEstado(tr("Contraseña incorrecta, volvé a escribirla."), Error);
+        emit enfocar(QStringLiteral("contrasena"));
     } else {
-        ui->etiquetaEstado->setText(tr("× rsync terminó con errores (código %1). Revisá la conexión con el servidor y volvé a intentarlo.").arg(codigo));
+        ponerProgreso(-1, {});
+        ponerEstado(tr("rsync terminó con errores (código %1). Revisá la conexión con el servidor y volvé a intentarlo.").arg(codigo), Error);
     }
 }
 
-void PaginaRespaldo::mostrarResumen()
+void Respaldo::mostrarResumen()
 {
     anotar({});
     anotar(tr("Se copiarían %n archivo(s)", nullptr, int(resumen.archivosACopiar()))
@@ -446,19 +438,18 @@ void PaginaRespaldo::mostrarResumen()
 
 // Después de un respaldo (completo o con algunos archivos que no se pudieron leer): se guarda la
 // fecha y se programa el recordatorio para dentro de DiasRecordatorio días
-void PaginaRespaldo::anotarRespaldoHecho()
+void Respaldo::anotarRespaldoHecho()
 {
     const QDateTime ahora = QDateTime::currentDateTime();
-    QSettings(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat).setValue(ClaveUltimoRespaldo, ahora);
+    ajustes().setValue(ClaveUltimoRespaldo, ahora);
     Plataforma::programarRecordatorio(ahora.toMSecsSinceEpoch(), DiasRecordatorio);
-    mostrarDescripcion();
+    emit ultimoCambio();
 }
 
-// «Último respaldo: hace 3 días» (o nunca), debajo de la descripción
-QString PaginaRespaldo::textoUltimoRespaldo() const
+// «Último respaldo: hace 3 días» (o nunca)
+QString Respaldo::textoUltimoRespaldo() const
 {
-    const QDateTime ultimo = QSettings(QDir::home().filePath(ArchivoAjustes), QSettings::IniFormat)
-                                 .value(ClaveUltimoRespaldo).toDateTime();
+    const QDateTime ultimo = ajustes().value(ClaveUltimoRespaldo).toDateTime();
     if (!ultimo.isValid())
         return tr("Todavía no hiciste ningún respaldo desde esta app.");
     const qint64 dias = ultimo.daysTo(QDateTime::currentDateTime());

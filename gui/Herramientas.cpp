@@ -1,4 +1,5 @@
 #include "Herramientas.h"
+#include "Rutas.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -22,7 +23,7 @@ QString archivoTar()
 
 QString datos()
 {
-    return QDir::homePath();
+    return carpetaDatos();
 }
 
 // Identifica la versión del entorno incluido en la app: si cambia, hay que descomprimirlo de nuevo
@@ -51,6 +52,12 @@ Herramientas::Herramientas(QObject *parent)
     : QObject(parent)
 {
     connect(&descompresor, &QProcess::finished, this, &Herramientas::terminarPreparacion);
+    // Las propiedades que mira QML siguen a la señal de siempre
+    connect(this, &Herramientas::preparacionTerminada, this, [this](bool bien, const QString &error) {
+        preparando_ = false;
+        error_ = bien ? QString() : error;
+        emit estadoCambio();
+    });
     connect(&descompresor, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart)
             emit preparacionTerminada(false, tr("No se pudo ejecutar tar."));
@@ -69,6 +76,9 @@ QString Herramientas::marca() const
 
 void Herramientas::preparar()
 {
+    preparando_ = true;
+    error_.clear();
+    emit estadoCambio();
     crearEnlaces();
     if (leer(marca()) == firmaTar()) {
         preparadas = true;
