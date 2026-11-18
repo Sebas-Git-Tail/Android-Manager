@@ -1,5 +1,6 @@
-// Ventana principal: barra arriba y una pila de páginas (portada → herramienta). El «atrás» del
-// celular vuelve a la página anterior; en la portada cierra la app (preguntando si hay una tarea).
+// Ventana principal: barra arriba y una pila de páginas (portada → herramienta). Las 3 rayitas abren
+// el menú lateral, como en las otras apps (con un puntito si hay una versión nueva). El «atrás» del
+// celular cierra el menú o vuelve a la página anterior; en la portada cierra la app (preguntando si hay una tarea).
 // Colores como Ingresos y Gastos: Material del sistema (claro u oscuro) con acento #2a78d6.
 import QtQuick
 import QtQuick.Controls.Material
@@ -44,7 +45,10 @@ ApplicationWindow {
 
     // «Atrás»: vuelve a la página anterior; en la portada, si hay una tarea, pregunta antes de salir
     onClosing: (cierre) => {
-        if (pila.depth > 1) {
+        if (menu.opened) {
+            menu.close()
+            cierre.accepted = false
+        } else if (pila.depth > 1) {
             pila.pop()
             cierre.accepted = false
         } else if (Sistema.hayTarea) {
@@ -60,18 +64,23 @@ ApplicationWindow {
     Component { id: paginaApps; PaginaApps {} }
 
     header: ToolBar {
+        id: barra
         Material.foreground: "white"
         topPadding: SafeArea.margins.top      // la barra de estado del celular queda sobre el azul
         contentHeight: 56                     // igual con o sin el botón de volver
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: pila.depth > 1 ? 0 : 12
             spacing: 0
             ToolButton {
                 visible: pila.depth > 1
                 icon.source: "qrc:/qt/qml/AndroidManager/iconos/volver.svg"
                 onClicked: ventana.close()     // lo mismo que el «atrás» del celular
                 Accessible.name: "Volver"
+            }
+            BotonMenu {
+                visible: pila.depth === 1
+                punto: Apps.versionNueva !== ""
+                onClicked: menu.open()
             }
             Label {
                 Layout.fillWidth: true
@@ -88,6 +97,95 @@ ApplicationWindow {
                 implicitHeight: 36
                 Material.accent: "white"
                 Layout.rightMargin: 8
+            }
+        }
+    }
+
+    // ── Menú lateral (como en las otras apps) ──
+    Drawer {
+        id: menu
+        width: Math.min(ventana.width * 0.82, 340)
+        height: ventana.height
+        interactive: pila.depth === 1          // en una herramienta, deslizar desde el borde no lo abre
+        background: Rectangle { color: ventana.superficie }
+
+        // Abre una herramienta desde el menú (siempre se está en la portada)
+        function ir(pagina, propiedades) { close(); ventana.abrir(pagina, propiedades) }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.topMargin: 8                       // el Drawer ya se corre debajo de la barra de estado
+            anchors.bottomMargin: menu.SafeArea.margins.bottom + 12
+            spacing: 2
+            RowLayout {
+                Layout.leftMargin: 20
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 12
+                spacing: 12
+                Image {
+                    source: "qrc:/qt/qml/AndroidManager/Logo.png"
+                    sourceSize.height: 96
+                    Layout.preferredHeight: 48
+                    Layout.preferredWidth: 48 * implicitWidth / Math.max(1, implicitHeight)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: "Android-Manager"
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                    color: ventana.tinta
+                    elide: Text.ElideRight
+                }
+            }
+            Label {
+                Layout.leftMargin: 20
+                Layout.topMargin: 4
+                Layout.bottomMargin: 4
+                text: "HERRAMIENTAS"
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+                font.letterSpacing: 0.8
+                color: ventana.tintaApagada
+            }
+            ItemMenu {
+                text: "Videos"
+                icono: "video"
+                enabled: Herramientas.listas
+                onClicked: menu.ir(Qt.resolvedUrl("PaginaDescargas.qml"), { modelo: Videos })
+            }
+            ItemMenu {
+                text: "Música"
+                icono: "musica"
+                enabled: Herramientas.listas
+                onClicked: menu.ir(Qt.resolvedUrl("PaginaDescargas.qml"), { modelo: Musica })
+            }
+            ItemMenu {
+                text: "Respaldo"
+                icono: "respaldo"
+                enabled: Herramientas.listas
+                onClicked: menu.ir(Qt.resolvedUrl("PaginaRespaldo.qml"))
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Layout.bottomMargin: 8
+                Layout.preferredHeight: 1
+                color: ventana.borde
+            }
+            ItemMenu {
+                text: "Apps y actualizaciones"
+                icono: "paquete"
+                destacado: Apps.versionNueva !== ""
+                onClicked: menu.ir(paginaApps)
+            }
+            Item { Layout.fillHeight: true }
+            Label {
+                Layout.leftMargin: 20
+                text: "Versión " + Sistema.version
+                font.pixelSize: 12
+                color: ventana.tintaApagada
             }
         }
     }
@@ -109,11 +207,11 @@ ApplicationWindow {
             abrir(Qt.resolvedUrl("PaginaRespaldo.qml"))
     }
 
-    // ¿Hay una versión nueva? (una vez por día): pregunta y abre «Apps y actualizaciones»
+    // ¿Hay una versión nueva? Se busca cada vez que se abre (marca el menú); pregunta como mucho una vez por día
     Timer { interval: 4000; running: true; onTriggered: Apps.buscarActualizacion(false) }
     Connections {
         target: Apps
-        function onVersionNuevaCambio() { if (Apps.versionNueva !== "" && pila.depth === 1) dialogoVersion.open() }
+        function onAvisoVersionNueva() { if (pila.depth === 1) dialogoVersion.open() }
     }
 
     Dialogo {

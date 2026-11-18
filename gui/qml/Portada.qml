@@ -1,5 +1,6 @@
 // Portada: el logo, los avisos (falta el permiso, se están preparando las herramientas) y una
-// tarjeta por herramienta. Si una está trabajando, su tarjeta muestra cómo va.
+// tarjeta por herramienta. Si una está trabajando, su tarjeta muestra cómo va. «Apps y actualizaciones»
+// y la versión están en el menú de las 3 rayitas (Main.qml).
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Controls.impl
@@ -149,33 +150,5 @@ Hoja {
         progreso: Respaldo.progreso
         detalle: Respaldo.ocupada ? Respaldo.estado : "Copia el celular al servidor. " + Respaldo.ultimoRespaldo
         onClicked: ventana.abrir(Qt.resolvedUrl("PaginaRespaldo.qml"))
-    }
-
-    Label {
-        Layout.topMargin: 8
-        Layout.leftMargin: 4
-        text: "La app"
-        font.pixelSize: 12
-        font.weight: Font.DemiBold
-        font.capitalization: Font.AllUppercase
-        font.letterSpacing: 0.8
-        color: ventana.tintaApagada
-    }
-    TarjetaHerramienta {
-        icono: "qrc:/qt/qml/AndroidManager/iconos/apps.svg"
-        titulo: "Apps y actualizaciones"
-        tono: ventana.naranja
-        insignia: Apps.versionNueva !== "" ? "Nueva versión" : ""
-        detalle: "Actualizar Android-Manager e instalar las otras apps"
-        onClicked: ventana.abrir(paginaApps)
-    }
-
-    Label {
-        Layout.fillWidth: true
-        Layout.topMargin: 8
-        horizontalAlignment: Text.AlignHCenter
-        text: "Versión " + Sistema.version
-        font.pixelSize: 12
-        color: ventana.tintaApagada
     }
 }
