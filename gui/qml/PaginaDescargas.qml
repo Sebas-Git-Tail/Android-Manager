@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Controls.impl
 import QtQuick.Layouts
+import Comun.Ui
 
 Hoja {
     id: pagina
@@ -31,6 +32,7 @@ Hoja {
             Layout.fillWidth: true
             text: musica ? "Uno por línea (music.youtube.com/…): se bajan de a uno, en orden." : "Uno por línea (youtube.com/…, youtu.be/… o de redes sociales): se bajan de a uno, en orden."
             font.pixelSize: 12
+            wrapMode: Text.WordWrap
             color: ventana.tintaApagada
         }
         Flow {

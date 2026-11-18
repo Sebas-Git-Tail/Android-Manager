@@ -14,6 +14,9 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QtQml/qqmlextensionplugin.h>
+
+Q_IMPORT_QML_PLUGIN(Comun_UiPlugin)   // comun/ui/qml: tema, tarjetas, avisos y la página «Apps»
 
 int main(int argc, char *argv[])
 {

@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import Comun.Ui
 
 Hoja {
     id: pagina

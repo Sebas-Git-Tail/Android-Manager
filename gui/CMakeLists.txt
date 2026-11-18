@@ -3,7 +3,7 @@
 # Gastos y el Gestor de Stock; la lógica está en C++ (Descargas, Respaldo, Herramientas, Sistema).
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.4.0 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,7 @@ qt_standard_project_setup(REQUIRES 6.8)
 set(COMUN_DESCARGAS_NUCLEO ON)
 set(COMUN_RED ON)
 set(COMUN_APPS ON)
+set(COMUN_UI_QML ON)        # tema y piezas comunes en QML (módulo Comun.Ui: tarjetas, chips, avisos, «Apps»)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../comun ${CMAKE_CURRENT_BINARY_DIR}/comun)
 
 qt_add_executable(Android-Manager
@@ -39,15 +40,6 @@ qt_add_qml_module(Android-Manager
         qml/PaginaDescargas.qml
         qml/PaginaPistas.qml
         qml/PaginaRespaldo.qml
-        qml/PaginaApps.qml
-        qml/Hoja.qml
-        qml/Seccion.qml
-        qml/TarjetaHerramienta.qml
-        qml/TarjetaEstado.qml
-        qml/Avisos.qml
-        qml/Chip.qml
-        qml/Segmentos.qml
-        qml/Dialogo.qml
     RESOURCES
         Logo.png
         iconos/abrir.svg iconos/apps.svg iconos/aviso.svg iconos/borrar.svg iconos/carpeta.svg
@@ -55,7 +47,7 @@ qt_add_qml_module(Android-Manager
         iconos/listo.svg iconos/musica.svg iconos/pegar.svg iconos/reloj.svg iconos/reproducir.svg
         iconos/respaldo.svg iconos/siguiente.svg iconos/video.svg iconos/volver.svg
 )
-target_link_libraries(Android-Manager PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Svg
+target_link_libraries(Android-Manager PRIVATE Qt6::Quick comun_ui_qmlplugin Qt6::QuickControls2 Qt6::Network Qt6::Svg
                       comun_descargas_nucleo comun_red comun_apps)
 target_compile_definitions(Android-Manager PRIVATE VERSION_PROGRAMA="${PROJECT_VERSION}")
 

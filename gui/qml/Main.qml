@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import Comun.Ui
 
 ApplicationWindow {
     id: ventana
@@ -52,27 +53,11 @@ ApplicationWindow {
         }
     }
 
-    // Mensajito abajo («Copiado», «Borrado»…)
-    function avisar(texto) { aviso.texto = texto; aviso.open() }
-    Popup {
-        id: aviso
-        property string texto
-        x: (ventana.width - width) / 2
-        y: ventana.height - height - 48
-        width: Math.min(ventana.width - 32, etiquetaAviso.implicitWidth + 32)
-        padding: 14
-        modal: false
-        closePolicy: Popup.CloseOnPressOutside
-        background: Rectangle { radius: 10; color: ventana.oscuro ? "#f0efec" : "#2c2c2a" }
-        contentItem: Label {
-            id: etiquetaAviso
-            text: aviso.texto
-            wrapMode: Text.WordWrap
-            color: ventana.oscuro ? "#0b0b0b" : "#f0efec"
-        }
-        onOpened: cerrarAviso.restart()
-        Timer { id: cerrarAviso; interval: 3000; onTriggered: aviso.close() }
-    }
+    // Mensajito abajo («Copiado», «Borrado»…): AvisoFlotante de Comun.Ui
+    function avisar(texto) { aviso.mostrar(texto) }
+    AvisoFlotante { id: aviso }
+    // «Apps y actualizaciones» es la página común de Comun.Ui (no un archivo de esta app)
+    Component { id: paginaApps; PaginaApps {} }
 
     header: ToolBar {
         Material.foreground: "white"
@@ -140,7 +125,7 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
             text: "Hay una versión nueva de Android-Manager: la " + Apps.versionNueva + " (tenés la " + Apps.versionPropia + ").\n\n¿La instalo ahora?"
         }
-        onAccepted: { Apps.actualizarEstaApp(); ventana.abrir(Qt.resolvedUrl("PaginaApps.qml")) }
+        onAccepted: { Apps.actualizarEstaApp(); ventana.abrir(paginaApps) }
     }
 
     Dialogo {

@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Controls.impl
 import QtQuick.Layouts
+import Comun.Ui
 
 Hoja {
     title: "Android-Manager"
@@ -166,7 +167,7 @@ Hoja {
         tono: ventana.naranja
         insignia: Apps.versionNueva !== "" ? "Nueva versión" : ""
         detalle: "Actualizar Android-Manager e instalar las otras apps"
-        onClicked: ventana.abrir(Qt.resolvedUrl("PaginaApps.qml"))
+        onClicked: ventana.abrir(paginaApps)
     }
 
     Label {
