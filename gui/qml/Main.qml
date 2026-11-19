@@ -138,6 +138,10 @@ ApplicationWindow {
                     color: ventana.tinta
                     elide: Text.ElideRight
                 }
+                // Dejar apretado el logo abre la sección Servidor (solo Sebastián: ahí se activa)
+                TapHandler {
+                    onLongPressed: menu.ir(Qt.resolvedUrl("PaginaServidor.qml"))
+                }
             }
             Label {
                 Layout.leftMargin: 20
@@ -166,6 +170,12 @@ ApplicationWindow {
                 icono: "respaldo"
                 enabled: Herramientas.listas
                 onClicked: menu.ir(Qt.resolvedUrl("PaginaRespaldo.qml"))
+            }
+            ItemMenu {
+                visible: Servidor.activado
+                text: "Servidor"
+                icono: "servidor"
+                onClicked: menu.ir(Qt.resolvedUrl("PaginaServidor.qml"))
             }
             Rectangle {
                 Layout.fillWidth: true

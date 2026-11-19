@@ -188,6 +188,11 @@ QString Herramientas::dbclient() const
     return biblioteca(QStringLiteral("libdbclient.so"));
 }
 
+QString Herramientas::dropbearkey() const
+{
+    return biblioteca(QStringLiteral("libdropbearkey.so"));
+}
+
 bool Herramientas::respaldoDisponible() const
 {
     return QFileInfo::exists(rsync()) && QFileInfo::exists(dbclient());

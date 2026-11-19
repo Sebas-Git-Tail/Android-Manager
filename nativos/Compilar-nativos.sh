@@ -1,9 +1,10 @@
 #!/bin/bash
-# Compila con el NDK los dos programas del respaldo y los deja en esta carpeta. Después hay
+# Compila con el NDK los programas del respaldo y de la sección Servidor y los deja en esta carpeta. Después hay
 # que correr ../Preparar-binarios.sh y ../Compilar.sh para que entren en el APK.
 #   rsync     sin dependencias externas
 #   dbclient  el cliente SSH de Dropbear: rsync lo usa en lugar de ssh, y toma la contraseña
 #             de la variable DROPBEAR_PASSWORD
+#   dropbearkey  crea la clave SSH del celular para la sección Servidor (en formato de Dropbear)
 set -euo pipefail
 cd "$(dirname "$(realpath "$0")")"
 RSYNC=3.5.2
@@ -35,7 +36,8 @@ echo '#define DROPBEAR_SVR_PASSWORD_AUTH 0' > localoptions.h
 echo '#define getpass(mensaje) ((char *)0)' >> localoptions.h
 ./configure --host=aarch64-linux-android --disable-zlib --disable-utmp --disable-utmpx --disable-wtmp \
     --disable-wtmpx --disable-lastlog --disable-syslog
-make -j"$(nproc)" PROGRAMS=dbclient
+make -j"$(nproc)" PROGRAMS="dbclient dropbearkey"
 "$STRIP" -o "$SALIDA/dbclient" dbclient
+"$STRIP" -o "$SALIDA/dropbearkey" dropbearkey
 
-ls -la "$SALIDA/rsync" "$SALIDA/dbclient"
+ls -la "$SALIDA/rsync" "$SALIDA/dbclient" "$SALIDA/dropbearkey"

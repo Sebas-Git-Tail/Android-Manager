@@ -4,6 +4,7 @@
 #   libpython.so, libqjs.so, libffmpeg.so, libffprobe.so   de youtubedl-android (Maven Central)
 #   libentorno.tar.so  bibliotecas de Python y ffmpeg + yt-dlp; la app lo descomprime al abrirse
 #   librsync.so, libdbclient.so  para el respaldo, se copian de nativos/ (rsync y dbclient)
+#   libdropbearkey.so  la clave del celular para la sección Servidor (nativos/dropbearkey)
 #
 # Uso: Preparar-binarios.sh [CARPETA_CON_LOS_AAR]  (sin carpeta, los descarga)
 set -euo pipefail
@@ -34,7 +35,7 @@ curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUM
 cp "$PY/libpython.so" "$PY/libqjs.so" "$FF/libffmpeg.so" "$FF/libffprobe.so" "$SALIDA/"
 python3 -I "nativos/armar-entorno.py" "$PY/libpython.zip.so" "$FF/libffmpeg.zip.so" "$TEMPORAL/yt-dlp" "$SALIDA/libentorno.tar.so"
 
-for programa in rsync dbclient; do
+for programa in rsync dbclient dropbearkey; do
     if [[ -f "nativos/$programa" ]]; then
         cp "nativos/$programa" "$SALIDA/lib$programa.so"
     else

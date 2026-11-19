@@ -36,6 +36,7 @@ public:
     // respaldo
     QString rsync() const;
     QString dbclient() const;
+    QString dropbearkey() const;            // sección Servidor: crea la clave del celular
     bool respaldoDisponible() const;
 
 signals:
