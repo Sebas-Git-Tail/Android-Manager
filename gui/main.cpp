@@ -5,8 +5,10 @@
 
 #include "ConfigServidor.h"
 #include "Descargas.h"
+#include "Fallas.h"
 #include "Herramientas.h"
 #include "ModeloApps.h"
+#include "Novedades.h"
 #include "Respaldo.h"
 #include "Servidor.h"
 #include "Sistema.h"
@@ -32,6 +34,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Android-Manager"));
     QGuiApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     QQuickStyle::setStyle(QStringLiteral("Material"));
+    soporte::iniciarFallas();       // si se cierra por una falla, manda un informe (comun/soporte)
 
     Herramientas herramientas;
     Descargas videos(Descargas::Tipo::Videos, &herramientas);
@@ -51,8 +54,12 @@ int main(int argc, char *argv[])
     contexto->setContextProperty(QStringLiteral("Servidor"), &servidor);
     contexto->setContextProperty(QStringLiteral("Sistema"), &sistema);
     contexto->setContextProperty(QStringLiteral("Apps"), modeloApps);
-    QObject::connect(&motor, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); },
-                     Qt::QueuedConnection);
+    // Qué cambió en cada versión (se muestra sola al abrir una versión nueva) e informe de fallas (comun/soporte)
+    contexto->setContextProperty(QStringLiteral("Novedades"), new soporte::Novedades(&app));
+    QObject::connect(&motor, &QQmlApplicationEngine::objectCreationFailed, &app, [] {
+        // La interfaz no cargó (falla de QML): se informa y recién después se sale
+        soporte::Fallas::instancia().informarYSalir(QStringLiteral("qml"), QStringLiteral("No se pudo cargar Main.qml"), 1);
+    }, Qt::QueuedConnection);
     motor.loadFromModule("AndroidManager", "Main");
 
     herramientas.preparar();

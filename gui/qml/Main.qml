@@ -190,6 +190,12 @@ ApplicationWindow {
                 destacado: Apps.versionNueva !== ""
                 onClicked: menu.ir(paginaApps)
             }
+            ItemMenu {   // qué cambió e informe de fallas; dejarlo apretado prende el modo Sebastián (escondido)
+                text: "Novedades"
+                icono: "regalo"
+                onClicked: { menu.close(); novedades.abrirTodas() }
+                onPressAndHold: novedades.alternarDesarrollador()
+            }
             ItemMenu {   // el menú queda abierto: se ve el cambio enseguida
                 text: Tema.textoAlternar
                 icono: Tema.iconoAlternar
@@ -255,4 +261,7 @@ ApplicationWindow {
         }
         onAccepted: { Sistema.cancelarTodo(); Qt.quit() }
     }
+
+    // Lo nuevo de esta versión: se abre solo la primera vez (comun/ui/qml/DialogoNovedades.qml)
+    DialogoNovedades { id: novedades }
 }

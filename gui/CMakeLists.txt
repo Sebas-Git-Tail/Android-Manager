@@ -3,7 +3,7 @@
 # Gastos y el Gestor de Stock; la lógica está en C++ (Descargas, Respaldo, Herramientas, Sistema).
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.8.0 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.9.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,6 +52,7 @@ qt_add_qml_module(Android-Manager
 target_link_libraries(Android-Manager PRIVATE Qt6::Quick comun_ui_qmlplugin Qt6::QuickControls2 Qt6::Network Qt6::Svg
                       comun_descargas_nucleo comun_red comun_apps)
 target_compile_definitions(Android-Manager PRIVATE VERSION_PROGRAMA="${PROJECT_VERSION}")
+comun_novedades(Android-Manager ${CMAKE_CURRENT_SOURCE_DIR}/../NOVEDADES.md)   # qué cambió en cada versión (comun/soporte)
 
 # versionCode sale solo de la versión (1.2.0 → 10200): Android no instala una actualización con un
 # versionCode igual o menor, y escribirlo a mano era fácil de olvidar

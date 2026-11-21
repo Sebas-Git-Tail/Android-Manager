@@ -1,0 +1,28 @@
+# Novedades de Android-Manager
+
+Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
+«Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
+
+## 1.9.0 (21/11/2026)
+- Novedades: la primera vez que abrís una versión nueva te cuenta qué cambió. Siempre están en el menú.
+- Si la app se cierra por una falla, manda un informe al servidor (sin tus datos) para que se pueda arreglar.
+  También lo podés mandar a mano desde Novedades, con un comentario.
+- Videos y Música: «Bajar con el servidor» (viene prendido y se recuerda). El servidor baja con yt-dlp y el
+  celular trae los archivos terminados, a las mismas carpetas de siempre. Ya no hace falta un archivo de
+  cookies. Sin servidor, se baja en el celular.
+- [Sebastián] Al bajar con el servidor se usan las cookies del LibreWolf de la notebook: nunca llegan al celular.
+- [Sebastián] Dejar apretado «Novedades» en el menú prende o apaga el modo Sebastián (ver también las novedades
+  «solo vos»). Los informes de fallas se ven en http://100.101.213.44:8080/fallas/ (por Tailscale).
+
+## 1.8.0 (19/11/2026)
+- [Sebastián] Sección Servidor (dejar apretado el logo del menú): miniaturas de Bodrio y páginas del sitio,
+  con una clave limitada.
+
+## 1.7.0 (18/11/2026)
+- Modo claro y oscuro con un botón (se recuerda).
+
+## 1.6.0 (18/11/2026)
+- Menú de 3 rayitas, con un puntito cuando hay una versión nueva.
+
+## 1.5.0 (17/11/2026)
+- Interfaz nueva, igual en todas las apps.
