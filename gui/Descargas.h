@@ -1,6 +1,12 @@
 // «Descargar Vídeos» y «Descargar Música»: la misma lógica con dos modos, sin interfaz (la
 // página es PaginaDescargas.qml). Hace lo mismo que Logica/Descargar.sh en el Manager de Linux:
 // las mismas opciones de yt-dlp y una URL por vez, leyendo el avance de su salida.
+//
+// Dos formas de bajar:
+//  - Con el servidor (de entrada): la notebook baja con yt-dlp y las cookies de su LibreWolf
+//    (descargas_web.py, en /descargar-videos/ y /descargar-musica/) y el celular trae los
+//    archivos terminados. Las cookies nunca salen del servidor. Ver DescargasServidor.cpp.
+//  - En el celular: yt-dlp acá mismo, sin cookies (por si el servidor no anda).
 
 #pragma once
 
@@ -9,8 +15,11 @@
 #include "ModeloPistas.h"
 
 #include <QAbstractListModel>
+#include <QJsonObject>
 #include <QProcess>
+#include <QSet>
 #include <QStringList>
+#include <QTimer>
 
 // Lo que se bajó en esta sesión: nombre, ruta del archivo y su miniatura
 class ModeloDescargados : public QAbstractListModel
@@ -49,8 +58,7 @@ class Descargas : public QObject
     Q_PROPERTY(int plataforma MEMBER plataforma_ NOTIFY formularioCambio)       // 0 YouTube, 1 redes sociales
     Q_PROPERTY(QString carpeta MEMBER carpeta_ NOTIFY formularioCambio)         // solo redes sociales
     Q_PROPERTY(bool playlist MEMBER playlist_ NOTIFY formularioCambio)          // solo música
-    Q_PROPERTY(bool usarCookies MEMBER usarCookies_ NOTIFY formularioCambio)
-    Q_PROPERTY(QString archivoCookies MEMBER archivoCookies_ NOTIFY formularioCambio)
+    Q_PROPERTY(bool usarServidor READ usarServidor WRITE ponerUsarServidor NOTIFY formularioCambio)   // se recuerda
     Q_PROPERTY(bool elegirPistas MEMBER elegirPistas_ NOTIFY formularioCambio)  // solo videos
 
     // Lo que está pasando
@@ -74,6 +82,8 @@ public:
     Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent = nullptr);
 
     bool musica() const { return tipo == Tipo::Musica; }
+    bool usarServidor() const { return usarServidor_; }
+    void ponerUsarServidor(bool usar);
     QString titulo() const;
     bool ocupada() const { return ocupada_; }
     QString estado() const { return estado_; }
@@ -130,15 +140,31 @@ private:
     QString archivoRutas() const;
     QString ultimaMiniatura() const;
 
+    // ── Con el servidor (DescargasServidor.cpp) ──
+    struct PorBajar { QString carpeta, nombre; qint64 tamano = 0; bool miniatura = false; };
+    QUrl urlServidor(const QString &ruta) const;
+    void remotoEmpezar();
+    void remotoSiguienteConsulta();
+    void remotoCrearTrabajo();
+    void remotoPreguntar();
+    void remotoProcesar(const QJsonObject &trabajo);
+    void remotoSiguienteArchivo();
+    void remotoTerminoArchivo(int codigo, const PorBajar &archivo, const QString &final, const QString &miniatura);
+    void remotoMostrarTransferencia();
+    void remotoQuizasTerminar();
+    void remotoCancelar();
+    void remotoFallo(const QString &mensaje);
+    static QString mensajeDe(int codigo, const QByteArray &cuerpo);
+
     Tipo tipo;
     Herramientas *herramientas;
     QProcess proceso;
     ModeloDescargados modeloDescargados;
     ModeloPistas modeloPistas;
 
-    QString urls_, carpeta_, archivoCookies_;
+    QString urls_, carpeta_;
     int plataforma_ = 0;
-    bool playlist_ = false, usarCookies_ = false, elegirPistas_ = false;
+    bool playlist_ = false, usarServidor_ = true, elegirPistas_ = false;
 
     bool ocupada_ = false;
     QString estado_;
@@ -164,4 +190,20 @@ private:
     QString archivoActual;
     QString mensajeError;
     QString ultimoPorcentaje;
+
+    // Con el servidor
+    bool remoto = false;            // esta descarga va por el servidor
+    int vueltaRemota = 0;           // cambia en cada descarga: las respuestas de una anterior se ignoran
+    QString trabajoRemoto;          // id del trabajo en el servidor (vacío: todavía no se creó)
+    QString estadoRemoto;           // en cola, descargando, listo, error, cancelado
+    QJsonObject ultimoRemoto;       // la última respuesta del servidor
+    QTimer temporizadorRemoto;      // pregunta cómo va cada 1,5 s
+    QTimer temporizadorTransferencia;   // avance del archivo que se está trayendo
+    int fallosSeguidos = 0;
+    QList<PorBajar> porBajar;       // terminados en el servidor que faltan traer
+    QSet<QString> vistos;           // «carpeta/nombre» ya anotados en porBajar
+    bool trayendo = false;          // hay un archivo bajando al celular
+    PorBajar enCamino;
+    QString rutaEnCamino;           // el .parcial que se está escribiendo
+    int traidosFallidos = 0;
 };

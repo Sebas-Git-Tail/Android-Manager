@@ -119,18 +119,18 @@ Hoja {
         SwitchDelegate {
             Layout.fillWidth: true
             leftPadding: 0; rightPadding: 0
-            text: "Usar archivo de cookies"
-            checked: modelo.usarCookies
-            onToggled: modelo.usarCookies = checked
+            text: "Bajar con el servidor"
+            checked: modelo.usarServidor
+            onToggled: modelo.usarServidor = checked
         }
-        TextField {
-            visible: modelo.usarCookies
+        Label {
             Layout.fillWidth: true
-            Material.containerStyle: Material.Outlined
-            placeholderText: "Archivo de cookies"
-            inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-            text: modelo.archivoCookies
-            onTextChanged: if (text !== modelo.archivoCookies) modelo.archivoCookies = text
+            text: modelo.usarServidor
+                  ? "Lo baja el servidor con las cookies de su navegador (siempre activadas) y después llega al celular."
+                  : "Se baja en el celular, sin cookies: algunos videos o canciones pueden fallar."
+            font.pixelSize: 12
+            wrapMode: Text.WordWrap
+            color: ventana.tintaApagada
         }
     }
 

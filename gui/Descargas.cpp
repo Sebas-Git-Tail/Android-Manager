@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QUrl>
 
 #include <csignal>
@@ -65,7 +66,7 @@ Descargas::Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent)
     : QObject(parent), tipo(tipo), herramientas(herramientas)
 {
     carpeta_ = Almacenamiento + QStringLiteral("/Movies");
-    archivoCookies_ = Almacenamiento + QStringLiteral("/Download/cookies.txt");
+    usarServidor_ = QSettings().value(QStringLiteral("descargas/servidor"), true).toBool();
     // Las miniaturas de la lista son de esta sesión
     QDir(carpetaMiniaturasLista()).removeRecursively();
 
@@ -74,6 +75,11 @@ Descargas::Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent)
     proceso.setChildProcessModifier([] { setpgid(0, 0); });
     connect(&proceso, &QProcess::readyReadStandardOutput, this, &Descargas::leerSalida);
     connect(&proceso, &QProcess::finished, this, &Descargas::terminoProceso);
+    temporizadorRemoto.setSingleShot(true);
+    temporizadorRemoto.setInterval(1500);
+    connect(&temporizadorRemoto, &QTimer::timeout, this, &Descargas::remotoPreguntar);
+    temporizadorTransferencia.setInterval(500);
+    connect(&temporizadorTransferencia, &QTimer::timeout, this, &Descargas::remotoMostrarTransferencia);
     connect(&proceso, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;
@@ -82,6 +88,15 @@ Descargas::Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent)
         fallidas += qMax(1, total_ - indice);
         finalizar();
     });
+}
+
+void Descargas::ponerUsarServidor(bool usar)
+{
+    if (usar == usarServidor_ || ocupada_)
+        return;
+    usarServidor_ = usar;
+    QSettings().setValue(QStringLiteral("descargas/servidor"), usar);
+    emit formularioCambio();
 }
 
 QString Descargas::titulo() const
@@ -198,10 +213,6 @@ void Descargas::descargar()
         ponerEstado(tr("Elegí una carpeta de destino."), Error);
         return;
     }
-    if (usarCookies_ && !QFileInfo::exists(archivoCookies_.trimmed())) {
-        ponerEstado(tr("No se encontró el archivo de cookies."), Error);
-        return;
-    }
     if (!QDir().mkpath(destino())) {
         ponerEstado(tr("No se pudo crear la carpeta %1.").arg(destino()), Error);
         return;
@@ -223,6 +234,11 @@ void Descargas::descargar()
     ponerProgreso(0, 0);
     ponerOcupada(true);
 
+    remoto = usarServidor_;
+    if (remoto) {
+        remotoEmpezar();
+        return;
+    }
     proceso.setProcessEnvironment(herramientas->ambiente());
 
     // YouTube cambia seguido y un yt-dlp viejo deja de funcionar
@@ -266,8 +282,6 @@ void Descargas::siguienteConsulta()
     ponerEstado(tr("Buscando calidades, subtítulos y pistas de audio (URL %1 de %2)…").arg(indice).arg(total_));
     QStringList argumentos = herramientas->argumentosYtDlp();
     argumentos << argumentosConsulta();
-    if (usarCookies_)
-        argumentos << QStringLiteral("--cookies") << archivoCookies_.trimmed();
     argumentos << QStringLiteral("--") << url;
     proceso.start(herramientas->python(), argumentos);
 }
@@ -317,7 +331,10 @@ void Descargas::continuarConEleccion(const QVariantMap &elegido)
         return;
     esperandoEleccion = false;
     eleccion = ModeloPistas::eleccionDe(elegido);
-    siguienteUrl();
+    if (remoto)
+        remotoCrearTrabajo();
+    else
+        siguienteUrl();
 }
 
 void Descargas::cancelarEleccion()
@@ -368,8 +385,6 @@ void Descargas::siguienteUrl()
         // MKV siempre; calidad, códecs, pistas y subtítulos si se eligieron
         argumentos << argumentosEleccion(eleccion, carpetaSubtitulos());
     }
-    if (usarCookies_)
-        argumentos << QStringLiteral("--cookies") << archivoCookies_.trimmed();
     argumentos << QStringLiteral("--") << url;
 
     proceso.start(herramientas->python(), argumentos);
@@ -386,6 +401,10 @@ void Descargas::cancelar()
     cancelado = true;
     cola.clear();
     ponerEstado(tr("Cancelando…"));
+    if (remoto) {
+        remotoCancelar();
+        return;
+    }
     if (proceso.state() != QProcess::NotRunning)
         ::kill(-static_cast<pid_t>(proceso.processId()), SIGTERM);
 }
@@ -480,8 +499,8 @@ void Descargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
     if (!cancelado && (codigo != 0 || estado != QProcess::NormalExit || listas == antes)) {
         ++fallidas;
         anotar(tr("× Falló: %1").arg(mensajeError.isEmpty() ? tr("yt-dlp terminó con código %1").arg(codigo) : mensajeError));
-        if (musica() && !usarCookies_)
-            anotar(tr("   Puede deberse a la falta de cookies (probá con «Usar archivo de cookies»)."));
+        if (musica())
+            anotar(tr("   Puede deberse a la falta de cookies (probá con «Bajar con el servidor», que usa las del servidor)."));
     }
     ponerProgreso(progresoArchivo_, indice);
     siguienteUrl();

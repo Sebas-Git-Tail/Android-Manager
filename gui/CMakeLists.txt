@@ -25,7 +25,7 @@ qt_add_executable(Android-Manager
     Rutas.h
     Plataforma.cpp Plataforma.h
     Herramientas.cpp Herramientas.h
-    Descargas.cpp Descargas.h
+    Descargas.cpp DescargasServidor.cpp Descargas.h
     ModeloPistas.cpp ModeloPistas.h
     Respaldo.cpp Respaldo.h
     Servidor.cpp Servidor.h
