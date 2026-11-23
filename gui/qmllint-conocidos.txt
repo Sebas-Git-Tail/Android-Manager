@@ -1,0 +1,5 @@
+# Avisos de qmllint que son falsos (los lee Revisar-qml.sh). «archivo: mensaje», sin línea ni columna.
+# Main.qml: el título sale de la página de arriba de la pila (StackView.currentItem es Item para qmllint)
+gui/qml/Main.qml: Member "title" not found on type "QQuickItem" [missing-property]
+# PaginaPistas.qml: «checked» del delegate de la lista (qmllint lo ve como Item)
+gui/qml/PaginaPistas.qml: Member "checked" not found on type "QQuickItem" [missing-property]

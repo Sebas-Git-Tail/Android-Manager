@@ -43,3 +43,5 @@ done
 "$HERRAMIENTAS/apksigner" verify "$APK"
 rm -f "$APK".idsig
 ls -la "$APK"
+# Errores de QML que si no recién se verían en el celular (no frena: el APK ya quedó)
+./Revisar-qml.sh "$BUILD" || echo "OJO: revisá los avisos de qmllint de arriba"
