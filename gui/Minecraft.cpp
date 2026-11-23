@@ -2,6 +2,7 @@
 
 #include "Servidor.h"
 
+#include <QDate>
 #include <QRegularExpression>
 #include <QVariantMap>
 
@@ -220,11 +221,15 @@ void Minecraft::lineaConsulta(const QString &linea)
         const QStringList c = resto.split(u'\t');
         if (c.size() < 8)
             return;
+        QString ultimo = c.at(5);
+        const QDate fecha = QDate::fromString(ultimo, Qt::ISODate);
+        if (fecha.isValid())
+            ultimo = fecha == QDate::currentDate() ? tr("hoy") : fecha.toString(QStringLiteral("dd/MM/yyyy"));
         servidoresNuevos << QVariantMap{{QStringLiteral("nombre"), c.at(1)},
                                         {QStringLiteral("encendido"), c.at(0) == u"ENCENDIDO"},
                                         {QStringLiteral("tipo"), c.at(2) == u"forge" ? QStringLiteral("Forge") : QStringLiteral("Paper")},
                                         {QStringLiteral("version"), c.at(3)}, {QStringLiteral("mundo"), c.at(4)},
-                                        {QStringLiteral("ultimo"), c.at(5)}, {QStringLiteral("ram"), c.at(6)},
+                                        {QStringLiteral("ultimo"), ultimo}, {QStringLiteral("ram"), c.at(6)},
                                         {QStringLiteral("jar"), c.at(7)}};
         if (pc_ != PcEncendida)
             ponerPc(PcEncendida, pcApagable_);
