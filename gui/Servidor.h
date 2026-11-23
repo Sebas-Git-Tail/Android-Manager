@@ -39,6 +39,7 @@ public:
     bool activado() const;
     bool disponible() const;
     QString clavePublica() const { return clavePublica_; }
+    QString archivoClave() const;            // la usa también Minecraft (la misma clave limitada)
     bool autorizado() const;
     bool ocupado() const { return !accion_.isEmpty(); }
     QString accionActual() const { return accion_; }
@@ -63,7 +64,6 @@ signals:
     void avisar(const QString &texto);
 
 private:
-    QString archivoClave() const;
     void leerClavePublica();
     void probarServidor(int indice);
     void conectar(const QString &servidor);

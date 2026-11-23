@@ -3,6 +3,12 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.10.0 (23/11/2026)
+- [Sebastián] Sección Minecraft (en el menú, con la sección Servidor activada): prender y apagar la PC desde
+  cualquier lado, y sus servidores como en el Manager de la PC: iniciar, detener y reiniciar (avisando en el
+  chat si hay gente), la consola en vivo con quién está conectado y para mandar comandos, Paper, plugins,
+  RAM y reiniciar mundo.
+
 ## 1.9.0 (21/11/2026)
 - Novedades: la primera vez que abrís una versión nueva te cuenta qué cambió. Siempre están en el menú.
 - Si la app se cierra por una falla, manda un informe al servidor (sin tus datos) para que se pueda arreglar.

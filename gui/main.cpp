@@ -1,5 +1,5 @@
 // Android-Manager: descargas de videos y música con yt-dlp, respaldo del celular con rsync y, solo para
-// Sebastián, las acciones del servidor (Servidor).
+// Sebastián, las acciones del servidor (Servidor) y los servidores de Minecraft de su PC (Minecraft).
 // La interfaz es QML con el estilo Material (como Ingresos y Gastos y el Gestor de Stock); la
 // lógica está en Descargas, Respaldo, Herramientas y Sistema, que QML ve como objetos globales.
 
@@ -7,6 +7,7 @@
 #include "Descargas.h"
 #include "Fallas.h"
 #include "Herramientas.h"
+#include "Minecraft.h"
 #include "ModeloApps.h"
 #include "Novedades.h"
 #include "Respaldo.h"
@@ -41,6 +42,7 @@ int main(int argc, char *argv[])
     Descargas musica(Descargas::Tipo::Musica, &herramientas);
     Respaldo respaldo(&herramientas);
     Servidor servidor(&herramientas);    // sección Servidor (solo Sebastián: se activa a mano)
+    Minecraft minecraft(&herramientas, &servidor);    // sección Minecraft (usa la clave de Servidor)
     Sistema sistema(&videos, &musica, &respaldo);
     // «Apps y actualizaciones» (comun/apps): versión nueva de esta app y las otras para instalar
     auto *modeloApps = new apps::ModeloApps(QStringLiteral("Android-Manager"), &app);   // vive más que el motor de QML
@@ -52,6 +54,7 @@ int main(int argc, char *argv[])
     contexto->setContextProperty(QStringLiteral("Musica"), &musica);
     contexto->setContextProperty(QStringLiteral("Respaldo"), &respaldo);
     contexto->setContextProperty(QStringLiteral("Servidor"), &servidor);
+    contexto->setContextProperty(QStringLiteral("Minecraft"), &minecraft);
     contexto->setContextProperty(QStringLiteral("Sistema"), &sistema);
     contexto->setContextProperty(QStringLiteral("Apps"), modeloApps);
     // Qué cambió en cada versión (se muestra sola al abrir una versión nueva) e informe de fallas (comun/soporte)
@@ -69,5 +72,6 @@ int main(int argc, char *argv[])
     const int codigo = app.exec();
     sistema.cancelarTodo();    // si se sale con algo en curso, que no queden procesos sueltos
     servidor.cancelarYEsperar();
+    minecraft.cancelarTodo();
     return codigo;
 }

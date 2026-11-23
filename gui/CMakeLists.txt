@@ -3,7 +3,7 @@
 # Gastos y el Gestor de Stock; la lógica está en C++ (Descargas, Respaldo, Herramientas, Sistema).
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.9.0 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.10.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,6 +29,8 @@ qt_add_executable(Android-Manager
     ModeloPistas.cpp ModeloPistas.h
     Respaldo.cpp Respaldo.h
     Servidor.cpp Servidor.h
+    ComandoServidor.cpp ComandoServidor.h
+    Minecraft.cpp Minecraft.h
     Sistema.cpp Sistema.h
 )
 
@@ -42,6 +44,8 @@ qt_add_qml_module(Android-Manager
         qml/PaginaPistas.qml
         qml/PaginaRespaldo.qml
         qml/PaginaServidor.qml
+        qml/PaginaMinecraft.qml
+        qml/PaginaServidorMinecraft.qml
     RESOURCES
         Logo.png
         iconos/abrir.svg iconos/apps.svg iconos/aviso.svg iconos/borrar.svg iconos/carpeta.svg

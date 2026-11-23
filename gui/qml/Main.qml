@@ -177,6 +177,12 @@ ApplicationWindow {
                 icono: "servidor"
                 onClicked: menu.ir(Qt.resolvedUrl("PaginaServidor.qml"))
             }
+            ItemMenu {
+                visible: Servidor.activado
+                text: "Minecraft"
+                icono: "juego"
+                onClicked: menu.ir(Qt.resolvedUrl("PaginaMinecraft.qml"))
+            }
             Rectangle {
                 Layout.fillWidth: true
                 Layout.topMargin: 8
