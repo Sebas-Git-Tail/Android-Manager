@@ -19,6 +19,16 @@ std::pair<QString, QString> partir(const QString &linea)
 
 } // namespace
 
+// Los servidores se identifican por su ruta dentro de Servidores/ en la PC (<grupo>/<versión>/<servidor>,
+// desde el Manager de Linux 4.13.0): se muestran como «26.1.2 SMP-1 (Amigos)»
+QString Minecraft::etiqueta(const QString &servidor) const
+{
+    const qsizetype barra = servidor.indexOf(u'/');
+    if (barra < 0)
+        return servidor;
+    return QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.left(barra));
+}
+
 Minecraft::Minecraft(Herramientas *herramientas, Servidor *servidor, QObject *parent)
     : QObject(parent), herramientas(herramientas), servidor(servidor),
       accion(herramientas, servidor->archivoClave()), consulta(herramientas, servidor->archivoClave()),
@@ -225,7 +235,10 @@ void Minecraft::lineaConsulta(const QString &linea)
         const QDate fecha = QDate::fromString(ultimo, Qt::ISODate);
         if (fecha.isValid())
             ultimo = fecha == QDate::currentDate() ? tr("hoy") : fecha.toString(QStringLiteral("dd/MM/yyyy"));
-        servidoresNuevos << QVariantMap{{QStringLiteral("nombre"), c.at(1)},
+        const QString &nombre = c.at(1);
+        servidoresNuevos << QVariantMap{{QStringLiteral("nombre"), nombre},
+                                        {QStringLiteral("titulo"), nombre.section(u'/', -1)},
+                                        {QStringLiteral("grupo"), nombre.contains(u'/') ? nombre.section(u'/', 0, 0) : QString()},
                                         {QStringLiteral("encendido"), c.at(0) == u"ENCENDIDO"},
                                         {QStringLiteral("tipo"), c.at(2) == u"forge" ? QStringLiteral("Forge") : QStringLiteral("Paper")},
                                         {QStringLiteral("version"), c.at(3)}, {QStringLiteral("mundo"), c.at(4)},
@@ -242,21 +255,21 @@ void Minecraft::lineaConsulta(const QString &linea)
 
 void Minecraft::iniciar(const QString &servidor)
 {
-    ejecutarMinecraft({QStringLiteral("iniciar"), servidor}, tr("Iniciando %1…").arg(servidor));
+    ejecutarMinecraft({QStringLiteral("iniciar"), servidor}, tr("Iniciando %1…").arg(etiqueta(servidor)));
 }
 
 void Minecraft::detener(const QString &servidor, int segundos)
 {
     cancelable_ = segundos > 0;
     ejecutarMinecraft({QStringLiteral("detener"), servidor, QString::number(qBound(0, segundos, 999))},
-                      tr("Deteniendo %1…").arg(servidor));
+                      tr("Deteniendo %1…").arg(etiqueta(servidor)));
 }
 
 void Minecraft::reiniciar(const QString &servidor, int segundos)
 {
     cancelable_ = segundos > 0;
     ejecutarMinecraft({QStringLiteral("reiniciar"), servidor, QString::number(qBound(0, segundos, 999))},
-                      tr("Reiniciando %1…").arg(servidor));
+                      tr("Reiniciando %1…").arg(etiqueta(servidor)));
 }
 
 void Minecraft::actualizarPaper(const QStringList &servidores)
@@ -273,7 +286,7 @@ void Minecraft::cambiarRam(const QString &servidor, int gb)
 
 void Minecraft::reiniciarMundo(const QString &servidor)
 {
-    ejecutarMinecraft({QStringLiteral("reiniciar-mundo"), servidor}, tr("Reiniciando el mundo de %1…").arg(servidor));
+    ejecutarMinecraft({QStringLiteral("reiniciar-mundo"), servidor}, tr("Reiniciando el mundo de %1…").arg(etiqueta(servidor)));
 }
 
 void Minecraft::consultarPlugins(const QString &servidor)
@@ -298,7 +311,7 @@ void Minecraft::consultarPlugins(const QString &servidor)
 
 void Minecraft::actualizarPlugins(const QString &servidor)
 {
-    ejecutarMinecraft({QStringLiteral("plugins-actualizar"), servidor}, tr("Actualizando plugins de %1…").arg(servidor));
+    ejecutarMinecraft({QStringLiteral("plugins-actualizar"), servidor}, tr("Actualizando plugins de %1…").arg(etiqueta(servidor)));
 }
 
 void Minecraft::instalarPlugin(const QString &texto, const QStringList &servidores)

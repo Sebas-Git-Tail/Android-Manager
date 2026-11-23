@@ -12,12 +12,14 @@ Hoja {
 
     // Minecraft.pc: 0 sin saber, 1 consultando, 2 apagada, 3 encendida, 4 prendiendo, 5 apagando
     readonly property int pc: Minecraft.pc
-    property var marcados: ({})            // nombre → true (se conservan al actualizar la lista)
+    property var marcados: ({})            // ruta → true (se conservan al actualizar la lista)
     readonly property var listaMarcados: Object.keys(marcados).filter(n => marcados[n])
 
-    function marcar(nombre, si) {
+    function marcar(nombre, si) { marcarVarios([nombre], si) }
+    function marcarVarios(nombres, si) {
         const copia = Object.assign({}, marcados)
-        copia[nombre] = si
+        for (const n of nombres)
+            copia[n] = si
         marcados = copia
     }
 
@@ -112,42 +114,77 @@ Hoja {
 
         Repeater {
             model: Minecraft.servidores
-            delegate: ItemDelegate {
+            // En la PC van por grupo (Servidores/<grupo>/<versión>/<servidor>): la lista llega ordenada y
+            // cada grupo lleva un encabezado que, al marcarlo, marca todos sus servidores
+            delegate: ColumnLayout {
                 id: fila
                 required property var modelData
+                required property int index
+                readonly property bool primeroDelGrupo: modelData.grupo !== ""
+                    && (index === 0 || Minecraft.servidores[index - 1].grupo !== modelData.grupo)
                 Layout.fillWidth: true
-                padding: 6
-                onClicked: ventana.abrir(Qt.resolvedUrl("PaginaServidorMinecraft.qml"), { nombre: modelData.nombre })
-                contentItem: RowLayout {
+                spacing: 0
+
+                RowLayout {
+                    visible: fila.primeroDelGrupo
+                    Layout.fillWidth: true
+                    Layout.topMargin: fila.index === 0 ? 0 : 10
                     spacing: 8
                     CheckBox {
-                        checked: pagina.marcados[fila.modelData.nombre] === true
-                        onToggled: pagina.marcar(fila.modelData.nombre, checked)
+                        readonly property var delGrupo: fila.primeroDelGrupo
+                            ? Minecraft.servidores.filter(s => s.grupo === fila.modelData.grupo).map(s => s.nombre) : []
+                        readonly property int cuantos: delGrupo.filter(n => pagina.marcados[n] === true).length
+                        tristate: true
+                        checkState: cuantos === 0 ? Qt.Unchecked : cuantos === delGrupo.length ? Qt.Checked : Qt.PartiallyChecked
+                        nextCheckState: function() { return cuantos < delGrupo.length ? Qt.Checked : Qt.Unchecked }
+                        onClicked: pagina.marcarVarios(delGrupo, cuantos < delGrupo.length)
                     }
-                    Icono {
-                        nombre: "punto"
-                        color: fila.modelData.encendido ? ventana.verde : ventana.tintaApagada
-                    }
-                    ColumnLayout {
+                    Label {
                         Layout.fillWidth: true
-                        spacing: 0
-                        Label {
-                            Layout.fillWidth: true
-                            text: fila.modelData.nombre + (fila.modelData.encendido ? "  (encendido)" : "")
-                            font.weight: fila.modelData.encendido ? Font.DemiBold : Font.Normal
-                            color: ventana.tinta
-                            elide: Text.ElideRight
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: fila.modelData.tipo + " " + fila.modelData.version + " · mundo " + fila.modelData.mundo
-                                  + " · " + fila.modelData.ram + " · " + fila.modelData.ultimo
-                            font.pixelSize: 12
-                            color: ventana.tintaSecundaria
-                            elide: Text.ElideRight
-                        }
+                        text: fila.modelData.grupo
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                        color: ventana.tinta
+                        elide: Text.ElideRight
                     }
-                    Icono { nombre: "siguiente"; color: ventana.tintaApagada }
+                }
+
+                ItemDelegate {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: fila.modelData.grupo !== "" ? 14 : 0
+                    padding: 6
+                    onClicked: ventana.abrir(Qt.resolvedUrl("PaginaServidorMinecraft.qml"), { nombre: fila.modelData.nombre })
+                    contentItem: RowLayout {
+                        spacing: 8
+                        CheckBox {
+                            checked: pagina.marcados[fila.modelData.nombre] === true
+                            onToggled: pagina.marcar(fila.modelData.nombre, checked)
+                        }
+                        Icono {
+                            nombre: "punto"
+                            color: fila.modelData.encendido ? ventana.verde : ventana.tintaApagada
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Label {
+                                Layout.fillWidth: true
+                                text: fila.modelData.titulo + (fila.modelData.encendido ? "  (encendido)" : "")
+                                font.weight: fila.modelData.encendido ? Font.DemiBold : Font.Normal
+                                color: ventana.tinta
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: fila.modelData.tipo + " " + fila.modelData.version + " · mundo " + fila.modelData.mundo
+                                      + " · " + fila.modelData.ram + " · " + fila.modelData.ultimo
+                                font.pixelSize: 12
+                                color: ventana.tintaSecundaria
+                                elide: Text.ElideRight
+                            }
+                        }
+                        Icono { nombre: "siguiente"; color: ventana.tintaApagada }
+                    }
                 }
             }
         }
@@ -239,7 +276,7 @@ Hoja {
             width: parent.width
             wrapMode: Text.WordWrap
             text: "Se baja la última compilación estable de Paper (de la misma versión de Minecraft) para:\n\n"
-                  + pagina.listaMarcados.join("\n") + "\n\nLos encendidos no se tocan y el jar anterior queda en Respaldos."
+                  + pagina.listaMarcados.map(n => Minecraft.etiqueta(n)).join("\n") + "\n\nLos encendidos no se tocan y el jar anterior queda en Respaldos."
         }
         footer: DialogButtonBox {
             Button { text: "No"; flat: true; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }

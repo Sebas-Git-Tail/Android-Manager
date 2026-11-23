@@ -3,6 +3,10 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.11.0 (23/11/2026)
+- [Sebastián] Minecraft: los servidores aparecen agrupados como en la carpeta nueva de la PC, y marcar un
+  grupo marca todos sus servidores. Necesita el Manager de la PC 4.13.0 o más nuevo.
+
 ## 1.10.0 (23/11/2026)
 - [Sebastián] Sección Minecraft (en el menú, con la sección Servidor activada): prender y apagar la PC desde
   cualquier lado, y sus servidores como en el Manager de la PC: iniciar, detener y reiniciar (avisando en el

@@ -95,6 +95,7 @@ public:
     Q_INVOKABLE void dejarConsola();
     Q_INVOKABLE void enviarComando(const QString &texto);
     Q_INVOKABLE bool encendido(const QString &servidor) const;
+    Q_INVOKABLE QString etiqueta(const QString &servidor) const;   // «26.1.2 SMP-1 (Amigos)»
 
     void cancelarTodo();
 

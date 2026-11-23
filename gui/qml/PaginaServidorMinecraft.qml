@@ -8,8 +8,9 @@ import Comun.Ui
 
 Hoja {
     id: pagina
-    property string nombre
-    title: nombre
+    property string nombre                 // ruta en la PC: «Amigos/26.1/26.1.2 SMP-1»
+    readonly property string etiqueta: Minecraft.etiqueta(nombre)    // «26.1.2 SMP-1 (Amigos)»
+    title: etiqueta
 
     readonly property var datos: {
         const lista = Minecraft.servidores
@@ -334,7 +335,7 @@ Hoja {
     // ── Diálogos ──
     Dialogo {
         id: dialogoAviso
-        title: pagina.reinicio ? "¿Reiniciar " + pagina.nombre + "?" : "¿Detener " + pagina.nombre + "?"
+        title: pagina.reinicio ? "¿Reiniciar " + pagina.etiqueta + "?" : "¿Detener " + pagina.etiqueta + "?"
         Label {
             width: parent.width
             wrapMode: Text.WordWrap
@@ -362,7 +363,7 @@ Hoja {
     }
     Dialogo {
         id: dialogoConfirmar
-        title: pagina.reinicio ? "¿Reiniciar " + pagina.nombre + "?" : "¿Detener " + pagina.nombre + "?"
+        title: pagina.reinicio ? "¿Reiniciar " + pagina.etiqueta + "?" : "¿Detener " + pagina.etiqueta + "?"
         Label {
             width: parent.width
             wrapMode: Text.WordWrap
@@ -398,7 +399,7 @@ Hoja {
         Label {
             width: parent.width
             wrapMode: Text.WordWrap
-            text: "El mundo de " + pagina.nombre + " (con el Nether y el End) se guarda comprimido en Respaldos y se borra: al iniciarlo se genera uno nuevo."
+            text: "El mundo de " + pagina.etiqueta + " (con el Nether y el End) se guarda comprimido en Respaldos y se borra: al iniciarlo se genera uno nuevo."
         }
         footer: DialogButtonBox {
             Button { text: "No"; flat: true; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
