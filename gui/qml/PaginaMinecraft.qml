@@ -15,6 +15,18 @@ Hoja {
     property var marcados: ({})            // ruta → true (se conservan al actualizar la lista)
     readonly property var listaMarcados: Object.keys(marcados).filter(n => marcados[n])
 
+    // Grupos abiertos (grupo → true): arrancan cerrados, salvo el que tenga un servidor encendido
+    property var abiertos: ({})
+    function alternarGrupo(grupo) {
+        const copia = Object.assign({}, abiertos)
+        copia[grupo] = !grupoAbierto(grupo)
+        abiertos = copia
+    }
+    function grupoAbierto(grupo) {
+        if (grupo in abiertos)
+            return abiertos[grupo]
+        return Minecraft.servidores.some(s => s.grupo === grupo && s.encendido)
+    }
     function marcar(nombre, si) { marcarVarios([nombre], si) }
     function marcarVarios(nombres, si) {
         const copia = Object.assign({}, marcados)
@@ -109,47 +121,81 @@ Hoja {
             wrapMode: Text.WordWrap
             font.pixelSize: 13
             color: ventana.tintaSecundaria
-            text: "Tocá uno para ver su consola, sus plugins y más. Marcá los que van a recibir Paper nuevo o un plugin."
+            text: "Tocá un grupo para desplegarlo y un servidor para ver su consola, sus plugins y más. Marcá los que van a recibir Paper nuevo o un plugin."
         }
 
         Repeater {
             model: Minecraft.servidores
             // En la PC van por grupo (Servidores/<grupo>/<versión>/<servidor>): la lista llega ordenada y
-            // cada grupo lleva un encabezado que, al marcarlo, marca todos sus servidores
+            // cada grupo lleva un encabezado que lo despliega (arrancan cerrados)
             delegate: ColumnLayout {
                 id: fila
                 required property var modelData
                 required property int index
                 readonly property bool primeroDelGrupo: modelData.grupo !== ""
                     && (index === 0 || Minecraft.servidores[index - 1].grupo !== modelData.grupo)
+                // Oculta del todo (si no, el espacio entre filas suma huecos) si no muestra nada
+                visible: primeroDelGrupo || modelData.grupo === "" || encabezado.abierto
                 Layout.fillWidth: true
                 spacing: 0
 
-                RowLayout {
+                // Encabezado del grupo: tocarlo lo despliega o lo cierra; la casilla marca todos sus servidores
+                ItemDelegate {
+                    id: encabezado
+                    readonly property var delGrupo: fila.primeroDelGrupo
+                        ? Minecraft.servidores.filter(s => s.grupo === fila.modelData.grupo) : []
+                    readonly property var nombres: delGrupo.map(s => s.nombre)
+                    readonly property int marcadosAca: nombres.filter(n => pagina.marcados[n] === true).length
+                    readonly property int encendidos: delGrupo.filter(s => s.encendido).length
+                    readonly property bool abierto: pagina.grupoAbierto(fila.modelData.grupo)
                     visible: fila.primeroDelGrupo
                     Layout.fillWidth: true
-                    Layout.topMargin: fila.index === 0 ? 0 : 10
-                    spacing: 8
-                    CheckBox {
-                        readonly property var delGrupo: fila.primeroDelGrupo
-                            ? Minecraft.servidores.filter(s => s.grupo === fila.modelData.grupo).map(s => s.nombre) : []
-                        readonly property int cuantos: delGrupo.filter(n => pagina.marcados[n] === true).length
-                        tristate: true
-                        checkState: cuantos === 0 ? Qt.Unchecked : cuantos === delGrupo.length ? Qt.Checked : Qt.PartiallyChecked
-                        nextCheckState: function() { return cuantos < delGrupo.length ? Qt.Checked : Qt.Unchecked }
-                        onClicked: pagina.marcarVarios(delGrupo, cuantos < delGrupo.length)
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: fila.modelData.grupo
-                        font.pixelSize: 16
-                        font.weight: Font.DemiBold
-                        color: ventana.tinta
-                        elide: Text.ElideRight
+                    Layout.topMargin: fila.index === 0 ? 0 : 4
+                    padding: 6
+                    onClicked: pagina.alternarGrupo(fila.modelData.grupo)
+                    contentItem: RowLayout {
+                        spacing: 8
+                        CheckBox {
+                            tristate: true
+                            checkState: encabezado.marcadosAca === 0 ? Qt.Unchecked
+                                      : encabezado.marcadosAca === encabezado.nombres.length ? Qt.Checked : Qt.PartiallyChecked
+                            nextCheckState: function() {
+                                return encabezado.marcadosAca < encabezado.nombres.length ? Qt.Checked : Qt.Unchecked
+                            }
+                            onClicked: pagina.marcarVarios(encabezado.nombres, encabezado.marcadosAca < encabezado.nombres.length)
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Label {
+                                Layout.fillWidth: true
+                                text: fila.modelData.grupo
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                                color: ventana.tinta
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: encabezado.delGrupo.length + (encabezado.delGrupo.length === 1 ? " servidor" : " servidores")
+                                      + (encabezado.encendidos > 0 ? " · " + encabezado.encendidos
+                                         + (encabezado.encendidos === 1 ? " encendido" : " encendidos") : "")
+                                font.pixelSize: 12
+                                color: encabezado.encendidos > 0 ? ventana.verde : ventana.tintaSecundaria
+                                elide: Text.ElideRight
+                            }
+                        }
+                        Icono {
+                            nombre: "desplegar"
+                            color: ventana.tintaApagada
+                            rotation: encabezado.abierto ? 180 : 0
+                            Behavior on rotation { NumberAnimation { duration: 120 } }
+                        }
                     }
                 }
 
                 ItemDelegate {
+                    visible: fila.modelData.grupo === "" || encabezado.abierto
                     Layout.fillWidth: true
                     Layout.leftMargin: fila.modelData.grupo !== "" ? 14 : 0
                     padding: 6

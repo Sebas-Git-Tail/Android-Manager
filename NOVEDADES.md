@@ -3,6 +3,10 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.11.1 (23/11/2026)
+- [Sebastián] Minecraft: los grupos de servidores se despliegan al tocarlos (arrancan cerrados, salvo el que
+  tenga uno encendido) y muestran cuántos servidores tienen y cuántos están encendidos.
+
 ## 1.11.0 (23/11/2026)
 - [Sebastián] Minecraft: los servidores aparecen agrupados como en la carpeta nueva de la PC, y marcar un
   grupo marca todos sus servidores. Necesita el Manager de la PC 4.13.0 o más nuevo.
