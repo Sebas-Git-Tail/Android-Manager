@@ -240,7 +240,8 @@ void Minecraft::lineaConsulta(const QString &linea)
                                         {QStringLiteral("titulo"), nombre.section(u'/', -1)},
                                         {QStringLiteral("grupo"), nombre.contains(u'/') ? nombre.section(u'/', 0, 0) : QString()},
                                         {QStringLiteral("encendido"), c.at(0) == u"ENCENDIDO"},
-                                        {QStringLiteral("tipo"), c.at(2) == u"forge" ? QStringLiteral("Forge") : QStringLiteral("Paper")},
+                                        // paper|forge|fabric|vanilla (Fabric y Vanilla desde Arch-Linux-Manager 4.14.0)
+                                        {QStringLiteral("tipo"), c.at(2).isEmpty() ? QStringLiteral("Paper") : c.at(2).left(1).toUpper() + c.at(2).mid(1)},
                                         {QStringLiteral("version"), c.at(3)}, {QStringLiteral("mundo"), c.at(4)},
                                         {QStringLiteral("ultimo"), ultimo}, {QStringLiteral("ram"), c.at(6)},
                                         {QStringLiteral("jar"), c.at(7)}};

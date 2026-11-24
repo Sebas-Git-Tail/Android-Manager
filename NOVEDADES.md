@@ -3,6 +3,10 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.11.2 (23/11/2026)
+- [Sebastián] Minecraft: los servidores Fabric y Vanilla (los que se crean desde el Manager de la PC 4.14.0)
+  se muestran como tales, no como Paper. En los Fabric y Forge, instalar un «plugin» pone el mod que le sirve.
+
 ## 1.11.1 (23/11/2026)
 - [Sebastián] Minecraft: los grupos de servidores se despliegan al tocarlos (arrancan cerrados, salvo el que
   tenga uno encendido) y muestran cuántos servidores tienen y cuántos están encendidos.
