@@ -1,9 +1,11 @@
 // Los programas que vienen con la app (Python, yt-dlp, ffmpeg, rsync, dbclient) y el entorno
 // para ejecutarlos. Los ejecutables están en la carpeta de bibliotecas nativas de la app; sus
-// bibliotecas y yt-dlp se descomprimen de libentorno.tar.so la primera vez que se abre.
+// bibliotecas y yt-dlp se descomprimen de entorno.tgz (en los assets del APK) la primera vez
+// que se abre.
 
 #pragma once
 
+#include <QFile>
 #include <QObject>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -45,11 +47,13 @@ signals:
 
 private:
     void terminarPreparacion();
+    void pasarTrozo();
     void crearEnlaces();
     QString entorno() const;
     QString marca() const;
 
     QProcess descompresor;
+    QFile paquete;      // entorno.tgz, mientras se descomprime
     bool preparadas = false;
     bool preparando_ = false;
     QString error_;

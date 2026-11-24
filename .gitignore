@@ -36,10 +36,12 @@ log.txt
 /*.png
 # Binarios precompilados que arma Preparar-binarios.sh
 /android/libs/
+/android/assets/
 
 # Binarios que arma nativos/Compilar-nativos.sh
 /nativos/rsync
 /nativos/dbclient
+/nativos/dropbearkey
 
 # Lo compilado (APK, paquetes, .tar para Windows)
 /Salida/

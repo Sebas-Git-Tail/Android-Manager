@@ -3,6 +3,11 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.12.0 (24/11/2026)
+- La app ocupa bastante menos en el celular (en el de prueba, de 305 MB a 224 MB): Python, ffmpeg y yt-dlp
+  ya no se guardan dos veces al instalar, y quedaron afuera las partes que nunca se usaban. La primera vez
+  que se abre después de actualizar tarda unos segundos más en prepararse.
+
 ## 1.11.2 (23/11/2026)
 - [Sebastián] Minecraft: los servidores Fabric y Vanilla (los que se crean desde el Manager de la PC 4.14.0)
   se muestran como tales, no como Paper. En los Fabric y Forge, instalar un «plugin» pone el mod que le sirve.

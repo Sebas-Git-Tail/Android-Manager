@@ -29,6 +29,10 @@ fi
     -DQT_HOST_PATH="$QT/gcc_64" \
     -DANDROID_SDK_ROOT="$ANDROID_HOME" -DANDROID_NDK_ROOT="$NDK" \
     -DQT_ANDROID_ABIS=arm64-v8a
+# Hasta la 1.11.2 el entorno iba con las bibliotecas (ahora va en android/assets). Puede haber quedado
+# una copia vieja (Qt no borra lo que ya copió a la compilación, y las copias con rsync tampoco)
+rm -f android/libs/arm64-v8a/libentorno.tar.so "$BUILD/android-build/libs/arm64-v8a/libentorno.tar.so"
+[[ -f android/assets/entorno.tgz && -f android/assets/entorno.firma ]] || { echo "Falta android/assets/entorno.tgz: corré Preparar-binarios.sh" >&2; exit 1; }
 cmake --build "$BUILD" --target apk
 
 SIN_FIRMAR="$BUILD/android-build/build/outputs/apk/release/android-build-release-unsigned.apk"

@@ -16,21 +16,23 @@ QString biblioteca(const QString &nombre)
     return QDir(QCoreApplication::applicationDirPath()).filePath(nombre);
 }
 
-QString archivoTar()
-{
-    return biblioteca(QStringLiteral("libentorno.tar.so"));
-}
+// Va en los assets del APK (no con las bibliotecas): así Android no guarda una copia más al instalar.
+// No puede terminar en .gz: el empaquetador de Android descomprime esos assets (quedaría el .tar entero)
+const QString archivoTar = QStringLiteral("assets:/entorno.tgz");
+constexpr qint64 tamanoTrozo = 1 << 20;     // se le pasa a tar de a 1 MB
 
 QString datos()
 {
     return carpetaDatos();
 }
 
-// Identifica la versión del entorno incluido en la app: si cambia, hay que descomprimirlo de nuevo
+QString leer(const QString &ruta);
+
+// Identifica la versión del entorno incluido en la app (su sha256, que anota Preparar-binarios.sh):
+// si cambia, hay que descomprimirlo de nuevo
 QString firmaTar()
 {
-    const QFileInfo info(archivoTar());
-    return QStringLiteral("%1-%2").arg(info.size()).arg(info.lastModified().toSecsSinceEpoch());
+    return leer(QStringLiteral("assets:/entorno.firma"));
 }
 
 QString leer(const QString &ruta)
@@ -59,9 +61,27 @@ Herramientas::Herramientas(QObject *parent)
         emit estadoCambio();
     });
     connect(&descompresor, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart)
+        if (error == QProcess::FailedToStart) {
+            paquete.close();
             emit preparacionTerminada(false, tr("No se pudo ejecutar tar."));
+        }
     });
+    connect(&descompresor, &QProcess::started, this, &Herramientas::pasarTrozo);
+    connect(&descompresor, &QProcess::bytesWritten, this, &Herramientas::pasarTrozo);
+}
+
+// Le pasa a tar el siguiente pedazo del paquete (sin cargarlo entero en memoria)
+void Herramientas::pasarTrozo()
+{
+    if (!paquete.isOpen() || descompresor.bytesToWrite() > tamanoTrozo / 4)
+        return;
+    const QByteArray trozo = paquete.read(tamanoTrozo);
+    if (!trozo.isEmpty())
+        descompresor.write(trozo);
+    if (trozo.size() < tamanoTrozo) {      // terminó (o no se pudo leer más)
+        paquete.close();
+        descompresor.closeWriteChannel();
+    }
 }
 
 QString Herramientas::entorno() const
@@ -80,13 +100,15 @@ void Herramientas::preparar()
     error_.clear();
     emit estadoCambio();
     crearEnlaces();
-    if (leer(marca()) == firmaTar()) {
+    const QString firma = firmaTar();
+    if (!firma.isEmpty() && leer(marca()) == firma) {
         preparadas = true;
         emit preparacionTerminada(true, {});
         return;
     }
-    if (!QFileInfo::exists(archivoTar())) {
-        emit preparacionTerminada(false, tr("Falta libentorno.tar.so en la app."));
+    paquete.setFileName(archivoTar);
+    if (firma.isEmpty() || !paquete.open(QIODevice::ReadOnly)) {
+        emit preparacionTerminada(false, tr("Falta entorno.tgz en la app."));
         return;
     }
     // Se descomprime en otra carpeta: si se corta a la mitad, no queda un entorno roto
@@ -94,12 +116,15 @@ void Herramientas::preparar()
     QDir(destino).removeRecursively();
     QDir().mkpath(destino);
     descompresor.setProcessChannelMode(QProcess::MergedChannels);
-    descompresor.start(QStringLiteral("/system/bin/tar"), {QStringLiteral("xzf"), archivoTar(), QStringLiteral("-C"), destino});
+    // «-f -»: lo lee de la entrada estándar, que va llenando pasarTrozo()
+    descompresor.start(QStringLiteral("/system/bin/tar"),
+                       {QStringLiteral("xzf"), QStringLiteral("-"), QStringLiteral("-C"), destino});
 }
 
 void Herramientas::terminarPreparacion()
 {
     const QString destino = entorno() + QStringLiteral(".nuevo");
+    paquete.close();
     if (descompresor.exitStatus() != QProcess::NormalExit || descompresor.exitCode() != 0) {
         const QString salida = QString::fromUtf8(descompresor.readAll()).trimmed();
         QDir(destino).removeRecursively();

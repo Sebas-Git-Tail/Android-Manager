@@ -3,7 +3,7 @@
 # Gastos y el Gestor de Stock; la lógica está en C++ (Descargas, Respaldo, Herramientas, Sistema).
 
 cmake_minimum_required(VERSION 3.21)
-project(AndroidManager VERSION 1.11.2 LANGUAGES C CXX)
+project(AndroidManager VERSION 1.12.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
