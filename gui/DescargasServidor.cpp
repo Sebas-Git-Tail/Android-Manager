@@ -13,6 +13,7 @@
 #include "Descargas.h"
 
 #include "ClienteHttp.h"
+#include "EstadoRemoto.h"
 #include "ConfigServidor.h"
 #include "Plataforma.h"
 
@@ -26,25 +27,12 @@
 
 namespace {
 
-// En /sdcard Android no deja usar algunos caracteres que en Linux sí valen: se cambian por «_»
-QString nombreSeguro(QString nombre)
-{
-    static const QRegularExpression prohibidos(QStringLiteral("[\\x00-\\x1f\"*:<>?\\\\|/]"));
-    nombre.replace(prohibidos, QStringLiteral("_"));
-    nombre = nombre.trimmed();
-    if (nombre.isEmpty() || nombre == u"." || nombre == u"..")
-        nombre = QStringLiteral("_");
-    return nombre;
-}
+using trabajoServidor::nombreSeguro;
+using trabajoServidor::terminado;
 
 QString megas(qint64 bytes)
 {
     return QStringLiteral("%1 MB").arg(double(bytes) / (1024 * 1024), 0, 'f', 1);
-}
-
-bool terminado(const QString &estado)
-{
-    return estado == u"listo" || estado == u"error" || estado == u"cancelado" || estado == u"perdido";
 }
 
 QByteArray json(const QJsonObject &objeto)
@@ -108,6 +96,7 @@ void Descargas::remotoSiguienteConsulta()
             return;
         if (!cancelado && (codigo != 200 || !oferta.agregar(cuerpo))) {
             anotar(tr("× No se pudo consultar %1: %2").arg(url, mensajeDe(codigo, cuerpo)));
+            anotarFallida(url);
             ++fallidas;
         }
         if (indice < total_ && !cancelado) {
@@ -121,6 +110,7 @@ void Descargas::remotoSiguienteConsulta()
             return;
         }
         fallidas = 0;
+        fallidasNuevas.clear();    // las que no se pudieron consultar igual se mandan a bajar
         if (oferta.vacia()) {
             anotar(tr("No hay calidades, subtítulos ni otras pistas de audio para elegir: se descarga como siempre."));
             remotoCrearTrabajo();
@@ -196,35 +186,18 @@ void Descargas::remotoPreguntar()
 void Descargas::remotoProcesar(const QJsonObject &trabajo)
 {
     ultimoRemoto = trabajo;
-    estadoRemoto = trabajo.value(QStringLiteral("estado")).toString();
+    const trabajoServidor::Estado leido = trabajoServidor::leer(trabajo);
+    estadoRemoto = leido.estado;
 
     // Archivos que terminaron en el servidor y todavía no se pidieron
-    const QJsonArray carpetas = trabajo.value(QStringLiteral("carpetas")).toArray();
-    for (const QJsonValue &valorCarpeta : carpetas) {
-        const QJsonObject carpeta = valorCarpeta.toObject();
-        const QString nombreCarpeta = carpeta.value(QStringLiteral("nombre")).toString();
-        const QJsonArray archivos = carpeta.value(QStringLiteral("archivos")).toArray();
-        for (const QJsonValue &valorArchivo : archivos) {
-            const QJsonObject archivo = valorArchivo.toObject();
-            PorBajar nuevo{nombreCarpeta, archivo.value(QStringLiteral("nombre")).toString(),
-                           qint64(archivo.value(QStringLiteral("tamano")).toDouble()),
-                           archivo.value(QStringLiteral("miniatura")).toBool()};
-            const QString clave = nuevo.carpeta + u'/' + nuevo.nombre;
-            if (!nuevo.nombre.isEmpty() && !vistos.contains(clave)) {
-                vistos.insert(clave);
-                porBajar << nuevo;
-            }
+    for (const PorBajar &nuevo : leido.archivos) {
+        const QString clave = nuevo.carpeta + u'/' + nuevo.nombre;
+        if (!vistos.contains(clave)) {
+            vistos.insert(clave);
+            porBajar << nuevo;
         }
     }
-
-    // Cuántas URL ya terminó el servidor
-    int hechasUrls = 0;
-    const QJsonArray urls = trabajo.value(QStringLiteral("urls")).toArray();
-    for (const QJsonValue &valor : urls) {
-        const QString estado = valor.toObject().value(QStringLiteral("estado")).toString();
-        if (estado == u"listo" || estado == u"parcial" || estado == u"error")
-            ++hechasUrls;
-    }
+    const int hechasUrls = leido.hechasUrls;
 
     // Mientras se trae un archivo, la tarjeta muestra eso; si no, lo que hace el servidor
     if (trayendo) {
@@ -233,9 +206,9 @@ void Descargas::remotoProcesar(const QJsonObject &trabajo)
         ponerProgreso(-1, hechasUrls);
         ponerEstado(tr("En la cola del servidor (esperando turno)…"));
     } else if (estadoRemoto == u"descargando") {
-        const QString actual = trabajo.value(QStringLiteral("actual")).toString();
-        const QString item = trabajo.value(QStringLiteral("item")).toString();
-        const int porcentaje = trabajo.value(QStringLiteral("porcentaje")).toInt();
+        const QString &actual = leido.actual;
+        const QString &item = leido.item;
+        const int porcentaje = leido.porcentaje;
         ponerProgreso(actual.isEmpty() ? -1 : porcentaje, hechasUrls);
         QString texto = actual.isEmpty() ? tr("El servidor está preparando la descarga…")
                         : porcentaje >= 100 ? tr("El servidor está procesando %1…").arg(actual)
@@ -290,10 +263,9 @@ void Descargas::remotoSiguienteArchivo()
         traerArchivo({});
         return;
     }
-    QDir().mkpath(carpetaMiniaturasLista());
-    const QString miniatura = QDir(carpetaMiniaturasLista()).filePath(QStringLiteral("%1.jpg").arg(++miniaturasGuardadas));
-    const QString nombreMiniatura = QFileInfo(enCamino.nombre).completeBaseName() + QStringLiteral(".jpg");
-    http::descargar(this, urlServidor(base + QStringLiteral("miniaturas/%1/%2").arg(enCamino.carpeta, nombreMiniatura)), miniatura,
+    const QString miniatura = nombreMiniatura() + QStringLiteral(".jpg");
+    const QString miniaturaEnServidor = QFileInfo(enCamino.nombre).completeBaseName() + QStringLiteral(".jpg");
+    http::descargar(this, urlServidor(base + QStringLiteral("miniaturas/%1/%2").arg(enCamino.carpeta, miniaturaEnServidor)), miniatura,
                     [this, vuelta, miniatura, traerArchivo](int codigo) {
         if (vuelta != vueltaRemota)
             return;
@@ -354,21 +326,26 @@ void Descargas::remotoQuizasTerminar()
         return;
     temporizadorRemoto.stop();
     if (!cancelado) {
-        const QJsonArray urls = ultimoRemoto.value(QStringLiteral("urls")).toArray();
-        int sinTerminar = 0;
-        for (const QJsonValue &valor : urls) {
-            const QJsonObject url = valor.toObject();
-            const QString estado = url.value(QStringLiteral("estado")).toString();
-            if (estado == u"error" || estado == u"parcial") {
-                ++fallidas;
-                anotar(tr("× Falló %1: %2").arg(url.value(QStringLiteral("url")).toString(),
-                                               url.value(QStringLiteral("error")).toString()));
-            } else if (estado != u"listo") {
-                ++sinTerminar;
+        const trabajoServidor::Estado leido = trabajoServidor::leer(ultimoRemoto);
+        for (const trabajoServidor::UrlFallida &url : leido.fallidas) {
+            ++fallidas;
+            anotarFallida(url.url);
+            anotar(tr("× Falló %1: %2").arg(url.url, url.error));
+        }
+        if (estadoRemoto == u"perdido") {
+            fallidas += qMax(1, leido.sinTerminar);
+            // Las que no llegaron a terminar (o todas, si el trabajo ni se creó) se pueden reintentar
+            const QJsonArray urls = ultimoRemoto.value(QStringLiteral("urls")).toArray();
+            if (urls.isEmpty()) {
+                for (const QString &url : std::as_const(urlsPedidas))
+                    anotarFallida(url);
+            }
+            for (const QJsonValue &valor : urls) {
+                const QJsonObject url = valor.toObject();
+                if (url.value(QStringLiteral("estado")).toString() != u"listo")
+                    anotarFallida(url.value(QStringLiteral("url")).toString());
             }
         }
-        if (estadoRemoto == u"perdido")
-            fallidas += qMax(1, sinTerminar);
         fallidas += traidosFallidos;
     }
     ++vueltaRemota;    // lo que llegue tarde de esta descarga ya no cuenta

@@ -73,8 +73,11 @@ ComandoServidor::ComandoServidor(Herramientas *herramientas, const QString &arch
 ComandoServidor::~ComandoServidor()
 {
     cancelar();
-    if (proceso.state() != QProcess::NotRunning)
-        proceso.waitForFinished(2000);
+    if (proceso.state() != QProcess::NotRunning) {
+        // Al cerrar la app: sin esperar segundos (SIGKILL no se puede ignorar)
+        ::kill(-static_cast<pid_t>(proceso.processId()), SIGKILL);
+        proceso.waitForFinished(300);
+    }
 }
 
 void ComandoServidor::iniciar(const QString &pedido)

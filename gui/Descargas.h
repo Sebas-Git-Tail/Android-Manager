@@ -11,7 +11,9 @@
 #pragma once
 
 #include "ConsultaVideo.h"
+#include "EstadoRemoto.h"
 #include "Herramientas.h"
+#include "HistorialDescargas.h"
 #include "ModeloPistas.h"
 
 #include <QAbstractListModel>
@@ -21,7 +23,8 @@
 #include <QStringList>
 #include <QTimer>
 
-// Lo que se bajó en esta sesión: nombre, ruta del archivo y su miniatura
+// Lo que se bajó: nombre, ruta del archivo y su miniatura. Desde la 1.13.0 se guarda entre una vez y otra
+// (HistorialDescargas)
 class ModeloDescargados : public QAbstractListModel
 {
     Q_OBJECT
@@ -37,13 +40,17 @@ public:
 
     void agregar(const QString &nombre, const QString &ruta, const QString &miniatura);
     void quitar(int fila);
+    void insertar(int fila, const historialDescargas::Entrada &entrada);   // «Deshacer» un borrado
+    void cargar(const QList<historialDescargas::Entrada> &entradas);
     QString ruta(int fila) const { return fila >= 0 && fila < filas.size() ? filas.at(fila).ruta : QString(); }
+    int filaDe(const QString &ruta) const;
+    QList<historialDescargas::Entrada> entradas() const { return filas; }
 
 signals:
     void cantidadCambio();
 
 private:
-    struct Fila { QString nombre, ruta, miniatura; };
+    using Fila = historialDescargas::Entrada;
     QList<Fila> filas;
 };
 
@@ -73,6 +80,7 @@ class Descargas : public QObject
     Q_PROPERTY(int cantidadAvisos READ cantidadAvisos NOTIFY avisosCambio)
     Q_PROPERTY(QObject *descargados READ descargados CONSTANT)
     Q_PROPERTY(QObject *pistas READ pistas CONSTANT)
+    Q_PROPERTY(int cantidadFallidas READ cantidadFallidas NOTIFY fallidasCambio)   // URL que fallaron la última vez
 
 public:
     enum class Tipo { Videos, Musica };
@@ -96,18 +104,27 @@ public:
     int cantidadAvisos() const { return int(avisos_.size()); }
     QObject *descargados() { return &modeloDescargados; }
     QObject *pistas() { return &modeloPistas; }
+    int cantidadFallidas() const { return int(urlsFallidas.size()); }
 
     Q_INVOKABLE void descargar();
     Q_INVOKABLE void cancelar();
     Q_INVOKABLE void pegar();                    // agrega lo del portapapeles a las URLs
     Q_INVOKABLE void abrirYoutubeMusic();
     Q_INVOKABLE bool ver(int fila);              // falso si no hay ninguna app para abrirlo
-    Q_INVOKABLE void borrar(int fila);           // definitivo: Android no tiene papelera para esto
+    // Borrar con «Deshacer»: el archivo se esconde (mismo lugar, otro nombre) y recién se borra con
+    // confirmarBorrado() (cuando se va el aviso) o al cerrar la app; deshacerBorrado() lo vuelve a poner
+    Q_INVOKABLE bool borrar(int fila);
+    Q_INVOKABLE void deshacerBorrado(const QString &ruta);
+    Q_INVOKABLE void confirmarBorrado(const QString &ruta);
+    Q_INVOKABLE void reintentar();               // vuelve a bajar las URL que fallaron la última vez
+    Q_INVOKABLE void olvidarFallidas();
+    Q_INVOKABLE void vaciarHistorial();          // saca todo de la lista (no borra los archivos)
     Q_INVOKABLE void continuarConEleccion(const QVariantMap &eleccion);
     Q_INVOKABLE void cancelarEleccion();
     Q_INVOKABLE void limpiarAvisos();
 
-    void cancelarYEsperar();
+    void cortarAlSalir();    // al cerrar la app: corta lo que haya sin esperar
+    void confirmarBorrados();
 
 signals:
     void formularioCambio();
@@ -115,6 +132,7 @@ signals:
     void estadoCambio();
     void progresoCambio();
     void avisosCambio();
+    void fallidasCambio();
     // La consulta terminó y hay calidades, pistas o subtítulos para elegir (en «pistas»):
     // la página de elección responde con continuarConEleccion() o cancelarEleccion()
     void pedirEleccion();
@@ -139,9 +157,14 @@ private:
     QString carpetaSubtitulos() const;
     QString archivoRutas() const;
     QString ultimaMiniatura() const;
+    QString nombreMiniatura();                  // uno nuevo, que no choque con los de otras veces
+    QString archivoHistorial() const;
+    void cargarHistorial();
+    void guardarHistorial();
+    void anotarFallida(const QString &url);
 
     // ── Con el servidor (DescargasServidor.cpp) ──
-    struct PorBajar { QString carpeta, nombre; qint64 tamano = 0; bool miniatura = false; };
+    using PorBajar = trabajoServidor::Archivo;   // carpeta, nombre, tamaño y si tiene miniatura
     QUrl urlServidor(const QString &ruta) const;
     void remotoEmpezar();
     void remotoSiguienteConsulta();
@@ -206,4 +229,10 @@ private:
     PorBajar enCamino;
     QString rutaEnCamino;           // el .parcial que se está escribiendo
     int traidosFallidos = 0;
+
+    // Historial, «Reintentar» y «Deshacer»
+    QStringList urlsFallidas;          // las de la última descarga (las que muestra «Reintentar»)
+    QStringList fallidasNuevas;        // las que van fallando en la descarga en curso
+    struct Borrado { historialDescargas::Entrada entrada; QString escondida; int fila = 0; };
+    QList<Borrado> borrados;           // esperando el «Deshacer»
 };

@@ -17,6 +17,7 @@ class Herramientas : public QObject
     Q_PROPERTY(bool listas READ listas NOTIFY estadoCambio)
     Q_PROPERTY(bool preparando READ preparando NOTIFY estadoCambio)
     Q_PROPERTY(QString error READ error NOTIFY estadoCambio)        // por qué no se pudieron preparar
+    Q_PROPERTY(QString versionYtDlp READ versionYtDlp NOTIFY versionYtDlpCambio)   // «2026.11.20» ("" si no se sabe)
 
 public:
     explicit Herramientas(QObject *parent = nullptr);
@@ -25,6 +26,7 @@ public:
     bool listas() const { return preparadas; }
     bool preparando() const { return preparando_; }
     QString error() const { return error_; }
+    QString versionYtDlp() const { return versionYtDlp_; }
 
     QProcessEnvironment ambiente() const;
     QString temporal() const;
@@ -44,6 +46,7 @@ public:
 signals:
     void preparacionTerminada(bool bien, const QString &error);
     void estadoCambio();
+    void versionYtDlpCambio();
 
 private:
     void terminarPreparacion();
@@ -51,10 +54,12 @@ private:
     void crearEnlaces();
     QString entorno() const;
     QString marca() const;
+    void consultarVersionYtDlp();
 
     QProcess descompresor;
     QFile paquete;      // entorno.tgz, mientras se descomprime
     bool preparadas = false;
     bool preparando_ = false;
     QString error_;
+    QString versionYtDlp_;
 };

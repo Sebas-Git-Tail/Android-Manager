@@ -1,5 +1,6 @@
 # Compila el APK (sin firmar y sin los binarios de Preparar-binarios.sh, que no están en git) en cada push,
-# para enterarse enseguida si algo no compila. Las pruebas del código compartido están en comun-qt.
+# para enterarse enseguida si algo no compila, y corre las pruebas de tests/ con el Qt de escritorio. Las
+# pruebas del código compartido están en comun-qt.
 name: Compilar
 
 on:
@@ -29,6 +30,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Pruebas (tests/, Qt de escritorio)
+        run: QT_ESCRITORIO="$(dirname "$QT_ROOT_DIR")/gcc_64" tests/correr.sh
       - name: Compilar el APK
         run: |
           "$QT_ROOT_DIR/bin/qt-cmake" -B build -S gui -G Ninja -DCMAKE_BUILD_TYPE=Release \

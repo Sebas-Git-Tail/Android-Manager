@@ -20,9 +20,13 @@ QString nombreDispositivo();
 // Avisa al sistema de un archivo nuevo, para que aparezca en la galería y los reproductores
 void avisarArchivoNuevo(const QString &ruta);
 
-// Servicio en primer plano: mantiene viva la app mientras hay una tarea
-void iniciarServicio(const QString &texto);
+// Servicio en primer plano: mantiene viva la app mientras hay una tarea. Devuelve "" si arrancó, o por qué
+// no (Android no deja empezarlo con la app en segundo plano)
+QString iniciarServicio(const QString &texto);
 void detenerServicio();
+void actualizarServicio(const QString &titulo, const QString &texto, int progreso);   // progreso -1: sin %
+void avisarFinTarea(int id, const QString &titulo, const QString &texto);             // queda en las notificaciones
+bool servicioVencido();     // Android cortó el servicio por tiempo (Android 15: 6 horas por día)
 
 // Recordatorio: una notificación si pasan «dias» desde el último respaldo (0 = no avisar)
 void programarRecordatorio(qint64 ultimoRespaldoMs, int dias);

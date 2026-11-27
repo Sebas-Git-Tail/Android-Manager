@@ -2,14 +2,21 @@
 // servidor con rsync, lo mismo que General/Android/Respaldo.sh en el Manager de Linux. Como allá,
 // lo que se borró del celular también se borra del respaldo (--delete). Cada celular respalda en
 // la carpeta de su dueño: Respaldos/<persona>/<celular>/. Los dos nombres quedan guardados.
+//
+// Desde la 1.13.0, lo que el respaldo borra o pisa en el servidor no se pierde: va a la carpeta hermana
+// <celular>.anteriores/<AAAA-MM-DD_HH-MM>/ y se borra a los 30 días (ver AnalisisRsync.h). Y se puede
+// traer de vuelta al celular (restaurar): todo, una carpeta, o lo que quedó en «anteriores» de una fecha.
+// La restauración no borra nada del celular ni pisa lo que allá sea más nuevo (--update).
 
 #pragma once
 
+#include "AnalisisRsync.h"
 #include "Herramientas.h"
 #include "ResumenSimulacion.h"
 
 #include <QProcess>
 #include <QStringList>
+#include <QVariantList>
 
 class QTcpSocket;
 
@@ -32,6 +39,11 @@ class Respaldo : public QObject
     Q_PROPERTY(QString archivo READ archivo NOTIFY progresoCambio)                // el que se está copiando
     Q_PROPERTY(QString avisos READ avisos NOTIFY avisosCambio)
     Q_PROPERTY(int cantidadAvisos READ cantidadAvisos NOTIFY avisosCambio)
+    Q_PROPERTY(bool restaurando READ restaurando NOTIFY ocupadaCambio)            // la tarea en curso trae archivos al celular
+
+    // Restaurar: lo que se encontró en el servidor (listar())
+    Q_PROPERTY(bool listado READ listado NOTIFY restauracionCambio)               // ya se consultó, y hay respaldo
+    Q_PROPERTY(QVariantList versiones READ versiones NOTIFY restauracionCambio)   // [{nombre, texto}], la más nueva primero
 
 public:
     enum TipoEstado { Info, Exito, Error };
@@ -53,13 +65,22 @@ public:
     QString archivo() const { return archivo_; }
     QString avisos() const { return avisos_.join(u'\n'); }
     int cantidadAvisos() const { return int(avisos_.size()); }
+    bool restaurando() const { return trabajando && modo == Modo::Restaurar; }
+    bool listado() const { return opciones.hayRespaldo; }
+    QVariantList versiones() const;
 
     Q_INVOKABLE void empezar(const QString &contrasena);
     Q_INVOKABLE void confirmarDestino(bool aceptado);   // respuesta a pedirConfirmacion()
     Q_INVOKABLE void cancelar();
     Q_INVOKABLE void limpiarAvisos();
 
-    void cancelarYEsperar();
+    // Restaurar (cada vez con la contraseña, como el respaldo)
+    Q_INVOKABLE void listar(const QString &contrasena);
+    Q_INVOKABLE QStringList carpetas(const QString &version) const;   // version "" = el respaldo actual
+    Q_INVOKABLE QString descripcionRestauracion(const QString &version, const QString &carpeta) const;
+    Q_INVOKABLE void restaurar(const QString &contrasena, const QString &version, const QString &carpeta);
+
+    void cortarAlSalir();    // al cerrar la app: corta lo que haya sin esperar
 
 signals:
     void nombresCambio();
@@ -69,6 +90,7 @@ signals:
     void estadoCambio();
     void progresoCambio();
     void avisosCambio();
+    void restauracionCambio();
     // Por --delete, respaldar en la carpeta equivocada borraría lo que haya allí: se pregunta
     // cada vez que el destino cambia (la primera vez incluida). Respuesta: confirmarDestino()
     void pedirConfirmacion(const QString &ruta);
@@ -76,7 +98,15 @@ signals:
     void contrasenaUsada();               // ya se usó (o se descartó): la página borra el campo
 
 private:
+    enum class Modo { Respaldar, Listar, Restaurar };
+
+    bool revisarNombres(const QString &contrasena);
     void continuar();
+    QStringList argumentosRespaldo(const QString &servidor);
+    QStringList argumentosListado(const QString &servidor) const;
+    QStringList argumentosRestauracion(const QString &servidor) const;
+    void terminoListado();
+    QString textoCancelado() const;
     void probarServidor(int indice);
     void copiar(const QString &servidor);
     void leerSalida();
@@ -87,10 +117,12 @@ private:
     void ponerTrabajando(bool trabajando);
     void ponerProgreso(int progreso, const QString &archivo);
     void mostrarResumen();
+    void anotarAnteriores();
     void anotarRespaldoHecho();
     QString persona() const;       // normalizada; vacía si lo escrito no sirve como carpeta
     QString celular() const;       // vacío si lo escrito no sirve como carpeta
     QString rutaEnServidor() const;
+    QString carpetaPersona() const;    // Respaldos/<persona>/ en el servidor
     void guardarNombres();
 
     Herramientas *herramientas;
@@ -110,4 +142,12 @@ private:
     bool sinDatos = false;         // rsync no llegó a recibir nada del servidor
     bool cancelado = false;
     bool trabajando = false;
+
+    Modo modo = Modo::Respaldar;
+    int anterioresMovidos = 0;     // archivos que en este respaldo pasaron a «anteriores»
+    QString versionNueva;          // la carpeta de «anteriores» de este respaldo
+    QStringList lineasListado;
+    analisisRsync::OpcionesRestauracion opciones;
+    QString restaurarVersion, restaurarCarpeta;
+    int restaurados = 0;
 };

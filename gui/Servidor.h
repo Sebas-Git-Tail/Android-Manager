@@ -15,6 +15,8 @@
 #include <QProcess>
 #include <QStringList>
 
+#include <functional>
+
 class QTcpSocket;
 
 class Servidor : public QObject
@@ -53,7 +55,7 @@ public:
     Q_INVOKABLE void ejecutar(const QString &accion); // miniaturas-bodrio, descargas, indices-instituto
     Q_INVOKABLE void cancelar();
 
-    void cancelarYEsperar();
+    void cortarAlSalir();    // al cerrar la app: corta lo que haya sin esperar
 
 signals:
     void activadoCambio();
@@ -64,7 +66,9 @@ signals:
     void avisar(const QString &texto);
 
 private:
-    void leerClavePublica();
+    // dropbearkey corre aparte (sin frenar la interfaz); alTerminar se llama con clavePublica_ ya puesta
+    void leerClavePublica(std::function<void()> alTerminar = {});
+    void terminarActivacion();
     void probarServidor(int indice);
     void conectar(const QString &servidor);
     void terminado(int codigo, QProcess::ExitStatus estado);
@@ -82,4 +86,5 @@ private:
     QByteArray pendiente;
     QByteArray errores;
     bool cancelado = false;
+    bool creandoClave = false;
 };

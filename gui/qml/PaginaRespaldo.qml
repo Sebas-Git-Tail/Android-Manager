@@ -1,6 +1,7 @@
 // «Respaldo»: a qué carpeta del servidor va, la contraseña SSH y el botón. Por --delete, lo que
-// se borró del celular también se borra del respaldo: la primera vez (y cada vez que cambia el
-// destino) se pregunta si la carpeta es la correcta.
+// se borró del celular también se borra del respaldo (queda 30 días en «anteriores»): la primera vez (y
+// cada vez que cambia el destino) se pregunta si la carpeta es la correcta. Abajo, «Restaurar»: traer al
+// celular lo que hay en el servidor (todo, una carpeta o lo de «anteriores» de una fecha).
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Controls.impl
@@ -15,6 +16,7 @@ Hoja {
         target: Respaldo
         function onPedirConfirmacion(ruta) { dialogoDestino.ruta = ruta; dialogoDestino.open() }
         function onContrasenaUsada() { campoContrasena.text = "" }
+        function onRestauracionCambio() { seccionRestaurar.version = ""; seccionRestaurar.carpeta = "" }
         function onEnfocar(campo) {
             const campos = { persona: campoPersona, celular: campoCelular, contrasena: campoContrasena }
             if (campo === "contrasena") campoContrasena.text = ""
@@ -48,7 +50,7 @@ Hoja {
                 wrapMode: Text.WordWrap
                 font.pixelSize: 13
                 color: ventana.tintaSecundaria
-                text: "Sin Android/data ni Android/obb. Lo que borraste del celular también se borra del respaldo."
+                text: "Sin Android/data ni Android/obb. Lo que borraste del celular también sale del respaldo, pero queda guardado 30 días aparte («anteriores»), por si hace falta."
             }
             RowLayout {
                 spacing: 8
@@ -148,6 +150,66 @@ Hoja {
         onClicked: Respaldo.ocupada ? Respaldo.cancelar() : Respaldo.empezar(campoContrasena.text)
     }
 
+    // ── Restaurar: del servidor al celular ──
+    Seccion {
+        id: seccionRestaurar
+        titulo: "Restaurar"
+        enabled: !Respaldo.ocupada
+        property string version: ""     // "" = el respaldo actual
+        property string carpeta: ""     // "" = todo
+
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            font.pixelSize: 13
+            color: ventana.tintaSecundaria
+            text: "Trae al celular lo que está en el servidor. No borra nada del celular ni reemplaza lo que acá sea más nuevo. Usa la contraseña de arriba."
+        }
+        Button {
+            text: Respaldo.listado ? "Volver a mirar el servidor" : "Ver qué hay en el servidor"
+            flat: Respaldo.listado
+            highlighted: !Respaldo.listado
+            enabled: Respaldo.disponible
+            onClicked: Respaldo.listar(campoContrasena.text)
+        }
+        Label { visible: Respaldo.listado; text: "Desde"; color: ventana.tintaSecundaria; font.pixelSize: 13 }
+        ComboBox {
+            visible: Respaldo.listado
+            Layout.fillWidth: true
+            model: ["El respaldo de ahora"].concat(Respaldo.versiones.map(v => "Lo que salió el " + v.texto))
+            onActivated: (i) => { seccionRestaurar.version = i === 0 ? "" : Respaldo.versiones[i - 1].nombre; seccionRestaurar.carpeta = "" }
+        }
+        Label {
+            visible: Respaldo.listado && seccionRestaurar.version !== ""
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            font.pixelSize: 12
+            color: ventana.tintaApagada
+            text: "Son los archivos que ese respaldo sacó (porque ya no estaban en el celular) o reemplazó por otra versión."
+        }
+        Label { visible: Respaldo.listado; text: "Qué"; color: ventana.tintaSecundaria; font.pixelSize: 13 }
+        ComboBox {
+            id: eleccionCarpeta
+            visible: Respaldo.listado
+            Layout.fillWidth: true
+            readonly property var carpetas: Respaldo.listado ? Respaldo.carpetas(seccionRestaurar.version) : []
+            model: ["Todo"].concat(carpetas)
+            onActivated: (i) => seccionRestaurar.carpeta = i === 0 ? "" : carpetas[i - 1]
+        }
+        Button {
+            visible: Respaldo.listado
+            Layout.fillWidth: true
+            text: "Restaurar…"
+            icon.source: "qrc:/qt/qml/AndroidManager/iconos/descargar.svg"
+            highlighted: true
+            Material.accent: ventana.acento
+            onClicked: {
+                dialogoRestaurar.texto = Respaldo.descripcionRestauracion(seccionRestaurar.version, seccionRestaurar.carpeta)
+                dialogoRestaurar.open()
+            }
+        }
+    }
+
     TarjetaEstado {
         texto: Respaldo.estado
         tipo: Respaldo.tipoEstado
@@ -179,7 +241,7 @@ Hoja {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Lo que haya en esa carpeta y no esté en este celular se va a borrar."
+                text: "Lo que haya en esa carpeta y no esté en este celular sale del respaldo (queda 30 días en «anteriores»)."
             }
         }
         footer: DialogButtonBox {
@@ -188,5 +250,21 @@ Hoja {
         }
         onAccepted: Respaldo.confirmarDestino(true)
         onRejected: Respaldo.confirmarDestino(false)
+    }
+
+    Dialogo {
+        id: dialogoRestaurar
+        property string texto
+        title: "¿Restaurar?"
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: dialogoRestaurar.texto + "\n\nNo se borra nada del celular, y lo que acá sea más nuevo no se reemplaza."
+        }
+        footer: DialogButtonBox {
+            Button { text: "No"; flat: true; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            Button { text: "Sí, restaurar"; flat: true; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+        }
+        onAccepted: Respaldo.restaurar(campoContrasena.text, seccionRestaurar.version, seccionRestaurar.carpeta)
     }
 }

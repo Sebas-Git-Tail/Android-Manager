@@ -24,6 +24,8 @@ if [[ ! -f "$CLAVE" ]]; then
     chmod 600 "$CLAVE"
 fi
 
+# Primero las pruebas de la lógica que no depende de Android (tests/, con el Qt de escritorio)
+QT="$QT" tests/correr.sh > /dev/null || { echo "Fallan las pruebas (tests/correr.sh para ver cuáles)" >&2; exit 1; }
 "$QT/android_arm64_v8a/bin/qt-cmake" -B "$BUILD" -S gui -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DQT_HOST_PATH="$QT/gcc_64" \

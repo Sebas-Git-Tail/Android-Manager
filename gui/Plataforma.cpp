@@ -73,12 +73,40 @@ void avisarArchivoNuevo(const QString &ruta)
         contexto().object(), arregloDeUna(ruta), nullptr, nullptr);
 }
 
-void iniciarServicio(const QString &texto)
+QString iniciarServicio(const QString &texto)
 {
-    QJniObject::callStaticMethod<void>("com/sebastian/androidmanager/ServicioTarea", "iniciar",
-                                       "(Landroid/content/Context;Ljava/lang/String;)V",
-                                       contexto().object(), cadena(texto).object<jstring>());
+    const QString error = QJniObject::callStaticObjectMethod(
+        "com/sebastian/androidmanager/ServicioTarea", "iniciar",
+        "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;",
+        contexto().object(), cadena(texto).object<jstring>()).toString();
+    if (QJniEnvironment().checkAndClearExceptions())
+        return QStringLiteral("excepción");
+    return error;
+}
+
+void actualizarServicio(const QString &titulo, const QString &texto, int progreso)
+{
+    QJniObject::callStaticMethod<void>("com/sebastian/androidmanager/ServicioTarea", "actualizar",
+                                       "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;I)V",
+                                       contexto().object(), cadena(titulo).object<jstring>(),
+                                       cadena(texto).object<jstring>(), jint(progreso));
     QJniEnvironment().checkAndClearExceptions();
+}
+
+void avisarFinTarea(int id, const QString &titulo, const QString &texto)
+{
+    QJniObject::callStaticMethod<void>("com/sebastian/androidmanager/ServicioTarea", "avisarFin",
+                                       "(Landroid/content/Context;ILjava/lang/String;Ljava/lang/String;)V",
+                                       contexto().object(), jint(id), cadena(titulo).object<jstring>(),
+                                       cadena(texto).object<jstring>());
+    QJniEnvironment().checkAndClearExceptions();
+}
+
+bool servicioVencido()
+{
+    const bool vencido = QJniObject::callStaticMethod<jboolean>("com/sebastian/androidmanager/ServicioTarea", "tomarVencido", "()Z");
+    QJniEnvironment().checkAndClearExceptions();
+    return vencido;
 }
 
 void programarRecordatorio(qint64 ultimoRespaldoMs, int dias)

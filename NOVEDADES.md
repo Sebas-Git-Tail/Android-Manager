@@ -3,6 +3,27 @@
 Lo que cambió en cada versión. La app lo muestra la primera vez que se abre una versión nueva y siempre desde
 «Novedades» en el menú. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 1.13.0 (26/11/2026)
+- La app se cierra sola mucho menos: se arreglaron las causas de los cierres que llegaron en los informes
+  (al pasar a segundo plano y al salir con algo en curso).
+- Respaldo: lo que borraste o cambiaste en el celular ya no se pierde del servidor enseguida. Queda guardado
+  30 días aparte («anteriores»), y al terminar te dice cuántos archivos fueron ahí.
+- Respaldo: nuevo «Restaurar», para traer de vuelta al celular lo que está en el servidor: todo, una carpeta,
+  o lo que un respaldo sacó en una fecha. No borra nada del celular y pregunta antes de empezar.
+- Videos y Música: la lista de lo que bajaste se recuerda aunque cierres la app. Si algún enlace falló, aparece
+  «Reintentar». Borrar ya no pregunta: tenés unos segundos para tocar «Deshacer».
+- La notificación muestra qué se está bajando o respaldando y cuánto falta, y al terminar avisa si salió bien.
+  Si Android no deja seguir en segundo plano, la app te lo avisa en vez de quedarse esperando.
+- En el menú se explica por qué Videos, Música y Respaldo están apagados la primera vez (se están preparando).
+- [Sebastián] Cierres: sin esperas en el hilo de la interfaz (clave de la sección Servidor con dropbearkey
+  aparte; al salir se cortan los procesos con SIGKILL sin esperar 3 s cada uno) y QSG_RENDER_LOOP=basic contra
+  el «Failed to acquire deadlock protector for QAndroidPlatformOpenGLWindow::eglSurface()» de Qt 6.10.0
+  (QTBUG-140490/140674; lo arregla del todo Qt 6.10.2 o más nuevo). Sin el «Binding loop» de los diálogos.
+- [Sebastián] Informes de fallas: en Android se le pregunta al sistema por qué terminó la app
+  (ApplicationExitInfo): cerrarla desde Recientes, falta de memoria o una actualización ya no cuentan; un ANR
+  o una excepción de Java sí. Servicio: onTimeout de Android 15 (dataSync, 6 h) y el error de empezarlo desde
+  segundo plano. La versión de yt-dlp está abajo en el menú. Pruebas propias en tests/ (Compilar.sh y CI).
+
 ## 1.12.0 (24/11/2026)
 - La app ocupa bastante menos en el celular (en el de prueba, de 305 MB a 224 MB): Python, ffmpeg y yt-dlp
   ya no se guardan dos veces al instalar, y quedaron afuera las partes que nunca se usaban. La primera vez

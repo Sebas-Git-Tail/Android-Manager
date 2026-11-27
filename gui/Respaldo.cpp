@@ -5,6 +5,7 @@
 #include "Rutas.h"
 
 #include <QDateTime>
+#include <QVariantMap>
 #include <QDir>
 #include <QFile>
 #include <QRegularExpression>
@@ -97,7 +98,12 @@ QString Respaldo::celular() const
 // La carpeta de destino lleva la persona y el nombre del celular
 QString Respaldo::rutaEnServidor() const
 {
-    return carpetaRespaldos() + persona() + u'/' + celular() + u'/';
+    return carpetaPersona() + celular() + u'/';
+}
+
+QString Respaldo::carpetaPersona() const
+{
+    return carpetaRespaldos() + persona() + u'/';
 }
 
 QString Respaldo::destino() const
@@ -120,10 +126,13 @@ void Respaldo::guardarNombres()
         guardados.setValue(ClaveCelular, celular());
 }
 
-void Respaldo::cancelarYEsperar()
+void Respaldo::cortarAlSalir()
 {
     cancelar();
-    proceso.waitForFinished(3000);
+    if (proceso.state() != QProcess::NotRunning) {
+        ::kill(-static_cast<pid_t>(proceso.processId()), SIGKILL);
+        proceso.waitForFinished(300);    // SIGKILL no se puede ignorar: alcanza con un instante
+    }
 }
 
 void Respaldo::ponerTrabajando(bool valor)
@@ -160,29 +169,37 @@ void Respaldo::limpiarAvisos()
     emit avisosCambio();
 }
 
-void Respaldo::empezar(const QString &contrasenaEscrita)
+// Lo que hace falta para cualquier conexión: los nombres de la carpeta y la contraseña
+bool Respaldo::revisarNombres(const QString &contrasenaEscrita)
 {
     if (trabajando)
-        return;
+        return false;
     if (!disponible()) {
         ponerEstado(tr("Esta versión de la app no incluye rsync ni el cliente SSH."), Error);
-        return;
+        return false;
     }
     if (persona().isEmpty()) {
         ponerEstado(tr("Escribí de quién es el celular: una palabra, con letras, números, punto o guion."), Error);
         emit enfocar(QStringLiteral("persona"));
-        return;
+        return false;
     }
     if (celular().isEmpty()) {
         ponerEstado(tr("Escribí un nombre para el celular, sin barras y sin empezar con un punto."), Error);
         emit enfocar(QStringLiteral("celular"));
-        return;
+        return false;
     }
     if (contrasenaEscrita.isEmpty()) {
         ponerEstado(tr("Escribí la contraseña SSH del servidor."), Error);
         emit enfocar(QStringLiteral("contrasena"));
-        return;
+        return false;
     }
+    return true;
+}
+
+void Respaldo::empezar(const QString &contrasenaEscrita)
+{
+    if (!revisarNombres(contrasenaEscrita))
+        return;
     // Con --delete, un origen que se ve vacío borraría todo el respaldo del servidor
     if (!Plataforma::tieneAccesoArchivos()
         || QDir(Origen).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
@@ -190,6 +207,7 @@ void Respaldo::empezar(const QString &contrasenaEscrita)
         return;
     }
     ponerEstado({});
+    modo = Modo::Respaldar;
     contrasena = contrasenaEscrita;
     simulando = simular_;
     // Una simulación no toca nada: ni pregunta ni guarda el destino
@@ -202,7 +220,7 @@ void Respaldo::empezar(const QString &contrasenaEscrita)
 
 void Respaldo::confirmarDestino(bool aceptado)
 {
-    if (trabajando || contrasena.isEmpty())
+    if (trabajando || contrasena.isEmpty() || modo != Modo::Respaldar)
         return;
     if (!aceptado) {
         contrasena.clear();
@@ -219,6 +237,8 @@ void Respaldo::continuar()
     errorConexion.clear();
     sinDatos = false;
     pendiente.clear();
+    anterioresMovidos = restaurados = 0;
+    lineasListado.clear();
     resumen = ResumenSimulacion();
     avisos_.clear();
     emit avisosCambio();
@@ -233,7 +253,7 @@ void Respaldo::probarServidor(int indice)
 {
     if (cancelado || indice >= servidores().size()) {
         if (cancelado)
-            ponerEstado(tr("Respaldo cancelado."));
+            ponerEstado(textoCancelado());
         else
             ponerEstado(tr("No se encontró el servidor (ni en la red de casa ni por Tailscale)."), Error);
         contrasena.clear();
@@ -280,10 +300,37 @@ void Respaldo::copiar(const QString &servidor)
     escribirHuellas(herramientas->ambiente().value(QStringLiteral("HOME")));
     if (servidor != servidores().constFirst())
         anotar(tr("Conectando por Tailscale (%1).").arg(servidor));
-    anotar(tr("%1 → %2:%3").arg(Origen, servidor, rutaEnServidor()));
-    ponerEstado(simulando ? tr("Simulando el respaldo (no cambia nada)…") : tr("Respaldando…"));
+    QStringList argumentos;
+    switch (modo) {
+    case Modo::Respaldar:
+        anotar(tr("%1 → %2:%3").arg(Origen, servidor, rutaEnServidor()));
+        ponerEstado(simulando ? tr("Simulando el respaldo (no cambia nada)…") : tr("Respaldando…"));
+        argumentos = argumentosRespaldo(servidor);
+        break;
+    case Modo::Listar:
+        ponerProgreso(-1, {});
+        ponerEstado(tr("Buscando los respaldos en el servidor…"));
+        argumentos = argumentosListado(servidor);
+        break;
+    case Modo::Restaurar:
+        ponerEstado(tr("Restaurando…"));
+        argumentos = argumentosRestauracion(servidor);
+        break;
+    }
 
-    QStringList argumentos{QStringLiteral("-ah"), QStringLiteral("--info=progress2,name1"),
+    // dbclient toma la contraseña de esta variable: no aparece en la lista de procesos
+    QProcessEnvironment variables = herramientas->ambiente();
+    variables.insert(QStringLiteral("DROPBEAR_PASSWORD"), contrasena);
+    contrasena.clear();
+    proceso.setProcessEnvironment(variables);
+    proceso.start(herramientas->rsync(), argumentos);
+    proceso.setProcessEnvironment(herramientas->ambiente());    // no queda guardada
+}
+
+QStringList Respaldo::argumentosRespaldo(const QString &servidor)
+{
+    versionNueva = analisisRsync::nombreVersion(QDateTime::currentDateTime());
+    QStringList argumentos{QStringLiteral("-ah"), QStringLiteral("--info=progress2,name1,backup1"),
                            // sin esto, rsync escribe las tildes de los nombres como \\#303\\#261
                            QStringLiteral("-8"),
                            // Sin -y: dbclient solo acepta al servidor si su huella está en known_hosts, y
@@ -296,20 +343,117 @@ void Respaldo::copiar(const QString &servidor)
                            QStringLiteral("--mkpath"),
                            QStringLiteral("--exclude"), QStringLiteral("Android/obb"),
                            QStringLiteral("--exclude"), QStringLiteral("Android/data"),
-                           QStringLiteral("--delete")};
+                           QStringLiteral("--delete"),
+                           // Lo que --delete borra o la copia pisa va a <celular>.anteriores/<fecha>/ (fuera del
+                           // respaldo, así --delete no lo toca)
+                           QStringLiteral("--backup"), analisisRsync::argumentoBackupDir(celular(), QDateTime::currentDateTime())};
+    // Y las versiones de más de 30 días se borran antes de empezar (en la misma conexión)
+    const QString limpieza = analisisRsync::rsyncPathConLimpieza(carpetaPersona());
+    if (!limpieza.isEmpty() && !simulando)
+        argumentos << QStringLiteral("--rsync-path=") + limpieza;
     if (simulando) {
         argumentos << QStringLiteral("--dry-run") << QStringLiteral("--itemize-changes") << QStringLiteral("--stats")
                    << QStringLiteral("--info=del1");
     }
     argumentos << Origen << QStringLiteral("%1@%2:%3").arg(usuario(), servidor, rutaEnServidor());
+    return argumentos;
+}
 
-    // dbclient toma la contraseña de esta variable: no aparece en la lista de procesos
-    QProcessEnvironment variables = herramientas->ambiente();
-    variables.insert(QStringLiteral("DROPBEAR_PASSWORD"), contrasena);
-    contrasena.clear();
-    proceso.setProcessEnvironment(variables);
-    proceso.start(herramientas->rsync(), argumentos);
-    proceso.setProcessEnvironment(herramientas->ambiente());    // no queda guardada
+// Solo las carpetas de primer nivel del respaldo y de cada versión de «anteriores» (no los archivos)
+QStringList Respaldo::argumentosListado(const QString &servidor) const
+{
+    QStringList argumentos{QStringLiteral("--list-only"), QStringLiteral("-r"), QStringLiteral("-8"),
+                           QStringLiteral("-e"), herramientas->dbclient(), QStringLiteral("--protect-args")};
+    argumentos << analisisRsync::filtrosListado(celular());
+    argumentos << QStringLiteral("%1@%2:%3").arg(usuario(), servidor, carpetaPersona());
+    return argumentos;
+}
+
+// Del servidor al celular, sin --delete: no se borra nada del celular, y --update no pisa lo que acá sea
+// más nuevo. Sin -a: en /sdcard no se pueden poner dueños ni permisos (daría «algunos archivos fallaron»)
+QStringList Respaldo::argumentosRestauracion(const QString &servidor) const
+{
+    QString origen = restaurarVersion.isEmpty()
+        ? rutaEnServidor()
+        : carpetaPersona() + analisisRsync::carpetaAnteriores(celular()) + u'/' + restaurarVersion + u'/';
+    QString destino = Origen;
+    if (!restaurarCarpeta.isEmpty()) {
+        origen += restaurarCarpeta + u'/';
+        destino += restaurarCarpeta + u'/';
+    }
+    return {QStringLiteral("-rth"), QStringLiteral("--update"), QStringLiteral("--info=progress2,name1"), QStringLiteral("-8"),
+            QStringLiteral("-e"), herramientas->dbclient(), QStringLiteral("--protect-args"),
+            QStringLiteral("--exclude"), QStringLiteral("Android/obb"), QStringLiteral("--exclude"), QStringLiteral("Android/data"),
+            QStringLiteral("%1@%2:%3").arg(usuario(), servidor, origen), destino};
+}
+
+void Respaldo::listar(const QString &contrasenaEscrita)
+{
+    if (!revisarNombres(contrasenaEscrita))
+        return;
+    modo = Modo::Listar;
+    opciones = {};
+    emit restauracionCambio();
+    contrasena = contrasenaEscrita;
+    simulando = false;
+    continuar();
+}
+
+QVariantList Respaldo::versiones() const
+{
+    QVariantList lista;
+    for (const QString &nombre : opciones.versiones)
+        lista << QVariantMap{{QStringLiteral("nombre"), nombre}, {QStringLiteral("texto"), analisisRsync::textoVersion(nombre)}};
+    return lista;
+}
+
+QStringList Respaldo::carpetas(const QString &version) const
+{
+    return version.isEmpty() ? opciones.carpetasActual : opciones.carpetasVersion.value(version);
+}
+
+QString Respaldo::descripcionRestauracion(const QString &version, const QString &carpeta) const
+{
+    const QString desde = version.isEmpty()
+        ? tr("del respaldo de «%1»").arg(celular())
+        : tr("de lo que el respaldo del %1 sacó o reemplazó (en «anteriores»)").arg(analisisRsync::textoVersion(version));
+    const QString que = carpeta.isEmpty() ? tr("Todo lo que hay") : tr("La carpeta «%1»").arg(carpeta);
+    return tr("%1 %2 vuelve al celular (%3).").arg(que, desde, Origen + carpeta);
+}
+
+void Respaldo::restaurar(const QString &contrasenaEscrita, const QString &version, const QString &carpeta)
+{
+    if (!revisarNombres(contrasenaEscrita))
+        return;
+    // Solo lo que se vio en el servidor (y nada que se salga de la carpeta)
+    if (!opciones.hayRespaldo || (!version.isEmpty() && !opciones.versiones.contains(version))
+        || (!carpeta.isEmpty() && !carpetas(version).contains(carpeta))
+        || carpeta.contains(u'/') || carpeta == u".." || carpeta == u".") {
+        ponerEstado(tr("Primero tocá «Ver qué hay en el servidor»."), Error);
+        return;
+    }
+    if (!Plataforma::tieneAccesoArchivos()) {
+        ponerEstado(tr("La app no puede escribir en el almacenamiento: falta dar acceso a los archivos (botón en la portada)."), Error);
+        return;
+    }
+    if (!carpeta.isEmpty())
+        QDir().mkpath(Origen + carpeta);
+    modo = Modo::Restaurar;
+    restaurarVersion = version;
+    restaurarCarpeta = carpeta;
+    contrasena = contrasenaEscrita;
+    simulando = false;
+    continuar();
+}
+
+QString Respaldo::textoCancelado() const
+{
+    switch (modo) {
+    case Modo::Listar: return tr("Búsqueda cancelada.");
+    case Modo::Restaurar: return tr("Restauración cancelada (lo que ya llegó al celular queda).");
+    case Modo::Respaldar: break;
+    }
+    return tr("Respaldo cancelado.");
 }
 
 void Respaldo::cancelar()
@@ -338,16 +482,14 @@ void Respaldo::leerSalida()
 
 void Respaldo::procesarLinea(const QString &linea)
 {
-    // «2.00MB  99%  2.00GB/s ...»: anclada, porque un archivo puede llamarse «99% seguro.txt»
-    static const QRegularExpression progreso(QStringLiteral("^\\S+\\s+(\\d+)%\\s"));
     if (linea.isEmpty())
         return;
     if (simulando && resumen.procesar(linea))
         return;
 
-    const QRegularExpressionMatch coincidencia = progreso.match(linea);
-    if (coincidencia.hasMatch()) {
-        ponerProgreso(coincidencia.captured(1).toInt(), archivo_);
+    const int porcentaje = analisisRsync::porcentaje(linea);   // «2.00MB  99%  2.00GB/s ...»
+    if (porcentaje >= 0) {
+        ponerProgreso(porcentaje, archivo_);
     } else if (linea.startsWith(herramientas->dbclient())) {
         // dbclient empieza sus mensajes con su ruta, que es larguísima
         const QString mensaje = linea.mid(herramientas->dbclient().size() + 1).trimmed();
@@ -361,10 +503,16 @@ void Respaldo::procesarLinea(const QString &linea)
         if (linea.contains(QStringLiteral("(0 bytes received so far)")))
             sinDatos = true;
         anotar(linea);
+    } else if (modo == Modo::Listar) {
+        lineasListado << linea;
+    } else if (analisisRsync::esPasoAAnteriores(linea)) {
+        ++anterioresMovidos;
     } else if (simulando) {
         // El resto son las estadísticas de rsync, que no son nombres de archivo
-    } else if (linea != QStringLiteral("sending incremental file list") && !linea.startsWith(QStringLiteral("sent "))
-               && !linea.startsWith(QStringLiteral("total size")) && linea != QStringLiteral("./")) {
+    } else if (!analisisRsync::esEncabezado(linea) && !linea.startsWith(QStringLiteral("(new) backup_dir"))
+               && !linea.startsWith(QStringLiteral("created ")) && !linea.startsWith(QStringLiteral("deleting "))) {
+        if (modo == Modo::Restaurar && !linea.endsWith(u'/'))
+            ++restaurados;
         ponerProgreso(progreso_, linea);    // la página lo recorta por el medio
     }
 }
@@ -382,19 +530,35 @@ void Respaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
     const bool contrasenaMala = errorConexion.contains(QStringLiteral("auth"), Qt::CaseInsensitive)
                              || errorConexion.contains(QStringLiteral("password"), Qt::CaseInsensitive)
                              || (sinDatos && errorConexion.contains(QStringLiteral("Disconnect received")));
+    // «No such file or directory» al entrar a la carpeta de la persona: todavía no respaldó nunca
+    const bool sinCarpeta = modo == Modo::Listar && codigo == 23
+                            && avisos_.join(u'\n').contains(QStringLiteral("change_dir"));
     if (cancelado || estado == QProcess::CrashExit) {
         ponerProgreso(-1, {});
-        ponerEstado(tr("Respaldo cancelado."));
-    } else if (codigo == 0) {
+        ponerEstado(textoCancelado());
+    } else if (modo == Modo::Listar && (codigo == 0 || sinCarpeta)) {
+        terminoListado();
+    } else if (modo == Modo::Restaurar && (codigo == 0 || codigo == 23 || codigo == 24)) {
+        ponerProgreso(100, {});
+        Plataforma::avisarArchivoNuevo(Origen + restaurarCarpeta);   // que la galería vuelva a mirar
+        if (codigo == 0)
+            ponerEstado(tr("Restauración completada: %n archivo(s) traído(s) al celular.", nullptr, restaurados), Exito);
+        else
+            ponerEstado(tr("Terminó, pero algunos archivos no se pudieron traer (ver los avisos)."), Error);
+    } else if (modo == Modo::Respaldar && codigo == 0) {
         if (!simulando)
             anotarRespaldoHecho();
         ponerProgreso(100, {});
         ponerEstado(simulando ? tr("Simulación completada: no se cambió nada.") : tr("Respaldo completado."), Exito);
         if (simulando)
             mostrarResumen();
-    } else if (codigo == 23 || codigo == 24) {
-        if (!simulando)
+        else
+            anotarAnteriores();
+    } else if (modo == Modo::Respaldar && (codigo == 23 || codigo == 24)) {
+        if (!simulando) {
             anotarRespaldoHecho();
+            anotarAnteriores();
+        }
         // Archivos que no se pudieron leer o que desaparecieron durante la copia
         ponerProgreso(100, {});
         ponerEstado(simulando ? tr("Simulación completada, pero algunos archivos no se podrían copiar (ver los avisos).")
@@ -413,6 +577,32 @@ void Respaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
         ponerProgreso(-1, {});
         ponerEstado(tr("rsync terminó con errores (código %1). Revisá la conexión con el servidor y volvé a intentarlo.").arg(codigo), Error);
     }
+}
+
+// Cuántos archivos pasaron a «anteriores» en este respaldo (los que se borraron o cambiaron en el celular)
+void Respaldo::anotarAnteriores()
+{
+    anotar({});
+    if (anterioresMovidos == 0) {
+        anotar(tr("No se borró ni se reemplazó nada del respaldo."));
+        return;
+    }
+    anotar(tr("%n archivo(s) que estaban en el respaldo y se borraron o cambiaron en el celular quedaron en "
+              "«anteriores» (%1) por 30 días.", nullptr, anterioresMovidos)
+               .arg(analisisRsync::carpetaAnteriores(celular()) + u'/' + versionNueva));
+}
+
+void Respaldo::terminoListado()
+{
+    opciones = analisisRsync::opcionesRestauracion(lineasListado, celular());
+    lineasListado.clear();
+    ponerProgreso(-1, {});
+    limpiarAvisos();
+    if (!opciones.hayRespaldo)
+        ponerEstado(tr("Todavía no hay un respaldo de «%1» en el servidor.").arg(celular()), Error);
+    else
+        ponerEstado(tr("Elegí qué traer al celular."), Exito);
+    emit restauracionCambio();
 }
 
 void Respaldo::mostrarResumen()

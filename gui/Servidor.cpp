@@ -86,29 +86,45 @@ bool Servidor::autorizado() const
 }
 
 // Al crearla, dropbearkey deja también <clave>.pub (con el comentario de -C). Si no está, se le pide
-// con «-y», que escribe «Public key portion is:», la clave en una línea y la huella.
-void Servidor::leerClavePublica()
+// con «-y», que escribe «Public key portion is:», la clave en una línea y la huella. Corre aparte: antes
+// se lo esperaba hasta 10 s en el hilo de la interfaz (al abrir la app), y Android puede cerrar una app
+// que no responde.
+void Servidor::leerClavePublica(std::function<void()> alTerminar)
 {
     QFile pub(archivoClave() + QStringLiteral(".pub"));
     if (pub.open(QIODevice::ReadOnly)) {
         const QByteArray linea = pub.readLine().trimmed();
         if (linea.startsWith("ssh-")) {
             clavePublica_ = QString::fromUtf8(linea);
+            emit activadoCambio();
+            if (alTerminar)
+                alTerminar();
             return;
         }
     }
-    QProcess lector;
-    lector.setProcessEnvironment(herramientas->ambiente());
-    lector.start(herramientas->dropbearkey(), {QStringLiteral("-y"), QStringLiteral("-f"), archivoClave()});
-    lector.waitForFinished(10000);
-    clavePublica_.clear();
-    const QList<QByteArray> lineas = lector.readAllStandardOutput().split('\n');
-    for (const QByteArray &linea : lineas) {
-        if (linea.startsWith("ssh-")) {
-            clavePublica_ = QString::fromUtf8(linea).trimmed();
-            break;
+    auto *lector = new QProcess(this);
+    lector->setProcessEnvironment(herramientas->ambiente());
+    const auto terminar = [this, lector, alTerminar] {
+        clavePublica_.clear();
+        const QList<QByteArray> lineas = lector->readAllStandardOutput().split('\n');
+        for (const QByteArray &linea : lineas) {
+            if (linea.startsWith("ssh-")) {
+                clavePublica_ = QString::fromUtf8(linea).trimmed();
+                break;
+            }
         }
-    }
+        lector->deleteLater();
+        emit activadoCambio();
+        if (alTerminar)
+            alTerminar();
+    };
+    connect(lector, &QProcess::finished, this, terminar);
+    connect(lector, &QProcess::errorOccurred, this, [terminar](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            terminar();
+    });
+    QTimer::singleShot(10000, lector, [lector] { lector->kill(); });   // si se colgó, termina igual (sin clave)
+    lector->start(herramientas->dropbearkey(), {QStringLiteral("-y"), QStringLiteral("-f"), archivoClave()});
 }
 
 void Servidor::activar()
@@ -117,31 +133,59 @@ void Servidor::activar()
         ponerEstado(tr("Esta versión de la app no incluye el cliente SSH."), Error);
         return;
     }
+    if (creandoClave)
+        return;
     if (!QFileInfo::exists(archivoClave())) {
         QDir().mkpath(QFileInfo(archivoClave()).absolutePath());
-        QProcess creador;
-        creador.setProcessEnvironment(herramientas->ambiente());
+        creandoClave = true;
+        ponerEstado(tr("Creando la clave del celular…"));
+        auto *creador = new QProcess(this);
+        creador->setProcessEnvironment(herramientas->ambiente());
+        // Corre aparte (antes se la esperaba hasta 30 s con la interfaz frenada)
+        const auto terminar = [this, creador](bool bien) {
+            creandoClave = false;
+            creador->deleteLater();
+            if (!bien) {
+                QFile::remove(archivoClave());    // si quedó a medias
+                ponerEstado(tr("No se pudo crear la clave del celular: %1")
+                                .arg(QString::fromUtf8(creador->readAllStandardError()).trimmed()), Error);
+                return;
+            }
+            QFile::setPermissions(archivoClave(), QFile::ReadOwner | QFile::WriteOwner);
+            terminarActivacion();
+        };
+        connect(creador, &QProcess::finished, this, [terminar](int codigo, QProcess::ExitStatus estado) {
+            terminar(estado == QProcess::NormalExit && codigo == 0);
+        });
+        connect(creador, &QProcess::errorOccurred, this, [terminar](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart)
+                terminar(false);
+        });
+        QTimer::singleShot(30000, creador, [creador] { creador->kill(); });
         // El comentario dice de qué celular es (se ve en «autorizar-equipo.sh --lista»)
         QString celular = Plataforma::nombreDispositivo();
         celular.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._-]+")), QStringLiteral("-"));
-        creador.start(herramientas->dropbearkey(), {QStringLiteral("-t"), QStringLiteral("ed25519"),
-                                                    QStringLiteral("-f"), archivoClave(),
-                                                    QStringLiteral("-C"), QStringLiteral("android-manager@") + celular});
-        if (!creador.waitForFinished(30000) || creador.exitCode() != 0) {
-            ponerEstado(tr("No se pudo crear la clave del celular: %1")
-                            .arg(QString::fromUtf8(creador.readAllStandardError()).trimmed()), Error);
-            return;
-        }
-        QFile::setPermissions(archivoClave(), QFile::ReadOwner | QFile::WriteOwner);
-    }
-    leerClavePublica();
-    if (clavePublica_.isEmpty()) {
-        ponerEstado(tr("No se pudo leer la clave del celular."), Error);
+        creador->start(herramientas->dropbearkey(), {QStringLiteral("-t"), QStringLiteral("ed25519"),
+                                                     QStringLiteral("-f"), archivoClave(),
+                                                     QStringLiteral("-C"), QStringLiteral("android-manager@") + celular});
         return;
     }
-    auto a = ajustes();
-    a.setValue(ClaveActivado, true);
-    emit activadoCambio();
+    terminarActivacion();
+}
+
+void Servidor::terminarActivacion()
+{
+    leerClavePublica([this] {
+        if (clavePublica_.isEmpty()) {
+            ponerEstado(tr("No se pudo leer la clave del celular."), Error);
+            return;
+        }
+        if (estado_ == tr("Creando la clave del celular…"))
+            ponerEstado({});
+        auto a = ajustes();
+        a.setValue(ClaveActivado, true);
+        emit activadoCambio();
+    });
 }
 
 void Servidor::desactivar()
@@ -282,11 +326,13 @@ void Servidor::cancelar()
         ::kill(-static_cast<pid_t>(proceso.processId()), SIGTERM);
 }
 
-void Servidor::cancelarYEsperar()
+void Servidor::cortarAlSalir()
 {
     cancelar();
-    if (proceso.state() != QProcess::NotRunning)
-        proceso.waitForFinished(3000);
+    if (proceso.state() != QProcess::NotRunning) {
+        ::kill(-static_cast<pid_t>(proceso.processId()), SIGKILL);
+        proceso.waitForFinished(300);    // SIGKILL no se puede ignorar: alcanza con un instante
+    }
 }
 
 void Servidor::ponerEstado(const QString &texto, TipoEstado tipo)

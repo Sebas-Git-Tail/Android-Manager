@@ -58,7 +58,7 @@ ApplicationWindow {
     }
 
     // Mensajito abajo («Copiado», «Borrado»…): AvisoFlotante de Comun.Ui
-    function avisar(texto) { aviso.mostrar(texto) }
+    function avisar(texto, opciones) { aviso.mostrar(texto, opciones) }   // opciones: botón «Deshacer» (AvisoFlotante)
     AvisoFlotante { id: aviso }
     // «Apps y actualizaciones» es la página común de Comun.Ui (no un archivo de esta app)
     Component { id: paginaApps; PaginaApps {} }
@@ -92,7 +92,8 @@ ApplicationWindow {
             }
             BusyIndicator {   // hay algo en curso (se ve desde cualquier página)
                 visible: Sistema.hayTarea
-                running: visible
+                // Sin animar en segundo plano: no pide cuadros mientras Android saca la superficie de la ventana
+                running: visible && Sistema.aLaVista
                 implicitWidth: 36
                 implicitHeight: 36
                 Material.accent: "white"
@@ -171,6 +172,19 @@ ApplicationWindow {
                 enabled: Herramientas.listas
                 onClicked: menu.ir(Qt.resolvedUrl("PaginaRespaldo.qml"))
             }
+            Label {   // por qué están apagadas las tres de arriba
+                visible: !Herramientas.listas
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 4
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: Herramientas.preparando ? ventana.tintaApagada : ventana.rojo
+                text: Herramientas.preparando
+                      ? "Videos, Música y Respaldo se habilitan cuando la app termina de preparar sus herramientas (solo tarda la primera vez después de instalar o actualizar)."
+                      : "Videos, Música y Respaldo no están disponibles: " + Herramientas.error
+            }
             ItemMenu {
                 visible: Servidor.activado
                 text: "Servidor"
@@ -210,7 +224,7 @@ ApplicationWindow {
             Item { Layout.fillHeight: true }
             Label {
                 Layout.leftMargin: 20
-                text: "Versión " + Sistema.version
+                text: "Versión " + Sistema.version + (Herramientas.versionYtDlp !== "" ? "  ·  yt-dlp " + Herramientas.versionYtDlp : "")
                 font.pixelSize: 12
                 color: ventana.tintaApagada
             }
@@ -221,6 +235,12 @@ ApplicationWindow {
         id: pila
         anchors.fill: parent
         initialItem: Portada {}
+    }
+
+    // Avisos del sistema (Android no dejó seguir una tarea en segundo plano…)
+    Connections {
+        target: Sistema
+        function onAvisar(texto) { ventana.avisar(texto) }
     }
 
     // La consulta de Videos terminó y hay calidades, pistas o subtítulos para elegir

@@ -146,6 +146,36 @@ Hoja {
         onClicked: modelo.ocupada ? modelo.cancelar() : modelo.descargar()
     }
 
+    // Lo que falló la última vez (se recuerda aunque se cierre la app)
+    Pane {
+        visible: !modelo.ocupada && modelo.cantidadFallidas > 0
+        Layout.fillWidth: true
+        padding: 12
+        background: Rectangle { radius: 14; color: ventana.naranjaSuave }
+        contentItem: RowLayout {
+            spacing: 8
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: ventana.tinta
+                text: modelo.cantidadFallidas === 1 ? "Un enlace no se pudo bajar la última vez."
+                                                    : modelo.cantidadFallidas + " enlaces no se pudieron bajar la última vez."
+            }
+            Button {
+                text: "Reintentar"
+                flat: true
+                Material.foreground: ventana.naranja
+                onClicked: modelo.reintentar()
+            }
+            ToolButton {
+                icon.source: "qrc:/qt/qml/AndroidManager/iconos/cerrar.svg"
+                icon.color: ventana.tintaApagada
+                onClicked: modelo.olvidarFallidas()
+                Accessible.name: "Olvidar"
+            }
+        }
+    }
+
     TarjetaEstado {
         texto: modelo.estado
         tipo: modelo.tipoEstado
@@ -155,7 +185,7 @@ Hoja {
         total: modelo.total
     }
 
-    // ── Lo que se bajó (en esta sesión) ──
+    // ── Lo que se bajó (se recuerda entre una vez y otra) ──
     Seccion {
         visible: modelo.descargados.cantidad > 0
         titulo: musica ? "Canciones descargadas" : "Videos descargados"
@@ -167,6 +197,7 @@ Hoja {
             ItemDelegate {
                 required property int index
                 required property string nombre
+                required property string ruta
                 required property string miniatura
                 Layout.fillWidth: true
                 leftPadding: 8
@@ -206,18 +237,28 @@ Hoja {
                     ToolButton {
                         icon.source: "qrc:/qt/qml/AndroidManager/iconos/borrar.svg"
                         icon.color: ventana.tintaApagada
-                        onClicked: { dialogoBorrar.fila = index; dialogoBorrar.nombre = nombre; dialogoBorrar.open() }
+                        onClicked: pagina.borrar(index, ruta)
                         Accessible.name: "Borrar"
                     }
                 }
             }
         }
-        Label {
+        RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 8
-            text: musica ? "Tocá una para escucharla." : "Tocá uno para verlo."
-            font.pixelSize: 12
-            color: ventana.tintaApagada
+            Label {
+                Layout.fillWidth: true
+                text: musica ? "Tocá una para escucharla." : "Tocá uno para verlo."
+                font.pixelSize: 12
+                color: ventana.tintaApagada
+            }
+            Button {   // solo la lista: los archivos quedan
+                text: "Vaciar lista"
+                flat: true
+                font.pixelSize: 12
+                Material.foreground: ventana.tintaSecundaria
+                onClicked: modelo.vaciarHistorial()
+            }
         }
     }
 
@@ -227,21 +268,16 @@ Hoja {
         onLimpiar: modelo.limpiarAvisos()
     }
 
-    // Android no tiene una papelera a la que mandar un archivo desde acá: el borrado es definitivo
-    Dialogo {
-        id: dialogoBorrar
-        property int fila: -1
-        property string nombre
-        title: "¿Borrar?"
-        Label {
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: "«" + dialogoBorrar.nombre + "» se borra del celular. No se puede deshacer."
-        }
-        footer: DialogButtonBox {
-            Button { text: "No"; flat: true; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { text: "Borrar"; flat: true; Material.foreground: ventana.rojo; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-        }
-        onAccepted: { modelo.borrar(fila); ventana.avisar("Borrado") }
+    // Borrar sin preguntar, con «Deshacer» unos segundos: el archivo queda escondido hasta que se va el aviso
+    // (o se cierra la app) y recién ahí se borra del celular
+    function borrar(fila, ruta) {
+        const descargas = modelo
+        if (!descargas.borrar(fila))
+            return
+        ventana.avisar("Borrado", {
+            textoBoton: "Deshacer",
+            alBoton: function() { descargas.deshacerBorrado(ruta) },
+            alVencer: function() { descargas.confirmarBorrado(ruta) }
+        })
     }
 }

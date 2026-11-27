@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace {
@@ -59,6 +60,8 @@ Herramientas::Herramientas(QObject *parent)
         preparando_ = false;
         error_ = bien ? QString() : error;
         emit estadoCambio();
+        if (bien)
+            consultarVersionYtDlp();
     });
     connect(&descompresor, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
@@ -201,6 +204,39 @@ bool Herramientas::ytDlpDesactualizado() const
 void Herramientas::marcarYtDlpActualizado()
 {
     escribir(QDir(datos()).filePath(QStringLiteral(".yt-dlp-actualizado")), QDateTime::currentDateTime().toString(Qt::ISODate));
+    consultarVersionYtDlp();
+}
+
+// «yt-dlp --version», aparte y solo si el archivo cambió (Python tarda en arrancar): se recuerda junto con
+// la fecha de yt-dlp
+void Herramientas::consultarVersionYtDlp()
+{
+    const QFileInfo ytDlp(QDir(entorno()).filePath(QStringLiteral("yt-dlp")));
+    const QString huella = QString::number(ytDlp.lastModified().toMSecsSinceEpoch()) + u'-' + QString::number(ytDlp.size());
+    QSettings ajustes(archivoAjustes(), QSettings::IniFormat);
+    if (ajustes.value(QStringLiteral("ytdlp/huella")).toString() == huella) {
+        versionYtDlp_ = ajustes.value(QStringLiteral("ytdlp/version")).toString();
+        emit versionYtDlpCambio();
+        return;
+    }
+    auto *consulta = new QProcess(this);
+    consulta->setProcessEnvironment(ambiente());
+    connect(consulta, &QProcess::finished, this, [this, consulta, huella](int codigo, QProcess::ExitStatus estado) {
+        const QString version = QString::fromUtf8(consulta->readAllStandardOutput()).trimmed().section(u'\n', -1);
+        consulta->deleteLater();
+        if (estado != QProcess::NormalExit || codigo != 0 || version.isEmpty() || version.size() > 40)
+            return;
+        versionYtDlp_ = version;
+        QSettings ajustes(archivoAjustes(), QSettings::IniFormat);
+        ajustes.setValue(QStringLiteral("ytdlp/huella"), huella);
+        ajustes.setValue(QStringLiteral("ytdlp/version"), version);
+        emit versionYtDlpCambio();
+    });
+    connect(consulta, &QProcess::errorOccurred, consulta, [consulta](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            consulta->deleteLater();
+    });
+    consulta->start(python(), {QDir(entorno()).filePath(QStringLiteral("yt-dlp")), QStringLiteral("--version")});
 }
 
 QString Herramientas::rsync() const

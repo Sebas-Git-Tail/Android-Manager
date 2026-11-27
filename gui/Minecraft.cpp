@@ -1,5 +1,6 @@
 #include "Minecraft.h"
 
+#include "AnalisisMinecraft.h"
 #include "Servidor.h"
 
 #include <QDate>
@@ -10,12 +11,7 @@ namespace {
 
 constexpr int MaxAvisos = 60;
 
-// «PALABRA resto» → {PALABRA, resto}
-std::pair<QString, QString> partir(const QString &linea)
-{
-    const qsizetype espacio = linea.indexOf(u' ');
-    return {linea.left(espacio), espacio < 0 ? QString() : linea.mid(espacio + 1)};
-}
+using analisisMinecraft::partir;
 
 } // namespace
 
@@ -23,10 +19,7 @@ std::pair<QString, QString> partir(const QString &linea)
 // desde el Manager de Linux 4.13.0): se muestran como «26.1.2 SMP-1 (Amigos)»
 QString Minecraft::etiqueta(const QString &servidor) const
 {
-    const qsizetype barra = servidor.indexOf(u'/');
-    if (barra < 0)
-        return servidor;
-    return QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.left(barra));
+    return analisisMinecraft::etiqueta(servidor);
 }
 
 Minecraft::Minecraft(Herramientas *herramientas, Servidor *servidor, QObject *parent)
@@ -90,20 +83,11 @@ Minecraft::Minecraft(Herramientas *herramientas, Servidor *servidor, QObject *pa
             jugadores_ = resto;
             emit jugadoresCambio();
         } else if (palabra == u"JUGADORES") {
-            // JUGADORES conectados<tab>máximo<tab>nombre,nombre…
-            const QStringList c = resto.split(u'\t');
-            if (c.size() < 3)
+            const auto leido = analisisMinecraft::jugadores(resto);
+            if (!leido)
                 return;
-            conectados_ = c.at(0).toInt();
-            const QStringList nombres = c.at(2).split(u',', Qt::SkipEmptyParts);
-            if (conectados_ == 0) {
-                jugadores_ = tr("Nadie conectado (entran hasta %1).").arg(c.at(1));
-            } else {
-                QString lista = nombres.join(QStringLiteral(", "));
-                if (nombres.size() < conectados_)
-                    lista += (lista.isEmpty() ? QString() : QStringLiteral(" ")) + tr("y %1 más").arg(conectados_ - nombres.size());
-                jugadores_ = tr("Conectados (%1 de %2): %3").arg(conectados_).arg(c.at(1), lista);
-            }
+            conectados_ = leido->first;
+            jugadores_ = leido->second;
             emit jugadoresCambio();
         }
     });
@@ -123,13 +107,8 @@ Minecraft::Minecraft(Herramientas *herramientas, Servidor *servidor, QObject *pa
         const auto [palabra, resto] = partir(linea);
         if (palabra != u"PLUGIN")
             return;
-        // PLUGIN archivo<tab>nombre<tab>versión<tab>nueva<tab>estado<tab>…
-        const QStringList c = resto.split(u'\t');
-        if (c.size() < 5)
-            return;
-        pluginsNuevosLista << QVariantMap{{QStringLiteral("archivo"), c.at(0)}, {QStringLiteral("nombre"), c.at(1)},
-                                          {QStringLiteral("version"), c.at(2)}, {QStringLiteral("nueva"), c.at(3)},
-                                          {QStringLiteral("estado"), c.at(4)}};
+        if (const auto leido = analisisMinecraft::plugin(resto))
+            pluginsNuevosLista << *leido;
     });
     connect(&buscador, &ComandoServidor::terminado, this, [this](ComandoServidor::Resultado resultado, int codigo) {
         plugins_ = pluginsNuevosLista;
@@ -167,7 +146,7 @@ bool Minecraft::encendido(const QString &nombre) const
 // comandos con comillas sin que nadie los interprete (acciones-servidor.sh los decodifica)
 QString Minecraft::pedidoMinecraft(const QStringList &argumentos) const
 {
-    return QStringLiteral("minecraft ") + QString::fromLatin1(argumentos.join(u'\n').toUtf8().toBase64());
+    return analisisMinecraft::pedido(argumentos);
 }
 
 // --- PC ----------------------------------------------------------------------------------------
@@ -228,23 +207,10 @@ void Minecraft::lineaConsulta(const QString &linea)
         emit pcCambio();
     } else if (palabra == u"SERVIDOR") {
         // SERVIDOR estado<tab>nombre<tab>tipo<tab>versión<tab>tamaño<tab>último uso<tab>RAM<tab>jar
-        const QStringList c = resto.split(u'\t');
-        if (c.size() < 8)
+        const auto leido = analisisMinecraft::servidor(resto);
+        if (!leido)
             return;
-        QString ultimo = c.at(5);
-        const QDate fecha = QDate::fromString(ultimo, Qt::ISODate);
-        if (fecha.isValid())
-            ultimo = fecha == QDate::currentDate() ? tr("hoy") : fecha.toString(QStringLiteral("dd/MM/yyyy"));
-        const QString &nombre = c.at(1);
-        servidoresNuevos << QVariantMap{{QStringLiteral("nombre"), nombre},
-                                        {QStringLiteral("titulo"), nombre.section(u'/', -1)},
-                                        {QStringLiteral("grupo"), nombre.contains(u'/') ? nombre.section(u'/', 0, 0) : QString()},
-                                        {QStringLiteral("encendido"), c.at(0) == u"ENCENDIDO"},
-                                        // paper|forge|fabric|vanilla (Fabric y Vanilla desde Arch-Linux-Manager 4.14.0)
-                                        {QStringLiteral("tipo"), c.at(2).isEmpty() ? QStringLiteral("Paper") : c.at(2).left(1).toUpper() + c.at(2).mid(1)},
-                                        {QStringLiteral("version"), c.at(3)}, {QStringLiteral("mundo"), c.at(4)},
-                                        {QStringLiteral("ultimo"), ultimo}, {QStringLiteral("ram"), c.at(6)},
-                                        {QStringLiteral("jar"), c.at(7)}};
+        servidoresNuevos << *leido;
         if (pc_ != PcEncendida)
             ponerPc(PcEncendida, pcApagable_);
     } else if (palabra == u"ERROR") {
@@ -341,9 +307,7 @@ void Minecraft::ejecutar(const QString &pedido, const QString &texto, bool esPc)
         return;
     }
     accionEsPc = esPc;
-    accionActual_ = pedido.section(u' ', 0, 0) == u"minecraft"
-        ? QString::fromUtf8(QByteArray::fromBase64(pedido.section(u' ', 1).toLatin1())).section(u'\n', 0, 0)
-        : pedido;
+    accionActual_ = analisisMinecraft::accionDe(pedido);
     mensajeFinal.clear();
     ponerEstado(texto);
     accion.iniciar(pedido);
@@ -411,7 +375,7 @@ void Minecraft::terminoAccion(ComandoServidor::Resultado resultado, int codigo)
     // El servidor tarda unos segundos en arrancar java: la lista se actualiza ahora y después
     consultarServidores();
     QTimer::singleShot(8000, this, &Minecraft::consultarServidores);
-    const QString que = QString::fromUtf8(QByteArray::fromBase64(hecha.section(u' ', 1).toLatin1())).section(u'\n', 0, 0);
+    const QString que = analisisMinecraft::accionDe(hecha);
     if ((que == u"plugins-actualizar" || que == u"plugin") && !pluginsDe_.isEmpty())
         consultarPlugins(pluginsDe_);
 }

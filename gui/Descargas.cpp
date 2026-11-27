@@ -1,8 +1,11 @@
 #include "Descargas.h"
 
 #include "Plataforma.h"
+#include "Rutas.h"
 
 #include <QClipboard>
+#include <QDateTime>
+#include <QSaveFile>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -50,6 +53,31 @@ void ModeloDescargados::agregar(const QString &nombre, const QString &ruta, cons
     emit cantidadCambio();
 }
 
+void ModeloDescargados::insertar(int fila, const historialDescargas::Entrada &entrada)
+{
+    fila = qBound(0, fila, int(filas.size()));
+    beginInsertRows({}, fila, fila);
+    filas.insert(fila, entrada);
+    endInsertRows();
+    emit cantidadCambio();
+}
+
+void ModeloDescargados::cargar(const QList<historialDescargas::Entrada> &entradas)
+{
+    beginResetModel();
+    filas = entradas;
+    endResetModel();
+    emit cantidadCambio();
+}
+
+int ModeloDescargados::filaDe(const QString &ruta) const
+{
+    for (int i = 0; i < filas.size(); ++i)
+        if (filas.at(i).ruta == ruta)
+            return i;
+    return -1;
+}
+
 void ModeloDescargados::quitar(int fila)
 {
     if (fila < 0 || fila >= filas.size())
@@ -67,8 +95,10 @@ Descargas::Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent)
 {
     carpeta_ = Almacenamiento + QStringLiteral("/Movies");
     usarServidor_ = QSettings().value(QStringLiteral("descargas/servidor"), true).toBool();
-    // Las miniaturas de la lista son de esta sesión
-    QDir(carpetaMiniaturasLista()).removeRecursively();
+    // Hasta la 1.12.0 la lista era solo de esa sesión y sus miniaturas estaban en la caché
+    QDir(QDir(herramientas->temporal()).filePath(musica() ? QStringLiteral("lista-musica") : QStringLiteral("lista-videos"))).removeRecursively();
+    cargarHistorial();
+    connect(&modeloDescargados, &ModeloDescargados::cantidadCambio, this, &Descargas::guardarHistorial);
 
     proceso.setProcessChannelMode(QProcess::MergedChannels);
     // En su propio grupo de procesos: Cancelar corta yt-dlp y el ffmpeg que haya lanzado
@@ -84,6 +114,8 @@ Descargas::Descargas(Tipo tipo, Herramientas *herramientas, QObject *parent)
         if (error != QProcess::FailedToStart)
             return;
         anotar(tr("× No se pudo ejecutar yt-dlp: %1").arg(proceso.errorString()));
+        for (const QString &url : urlsPedidas.mid(qMax(0, indice - 1)))
+            anotarFallida(url);
         cola.clear();
         fallidas += qMax(1, total_ - indice);
         finalizar();
@@ -104,10 +136,14 @@ QString Descargas::titulo() const
     return musica() ? tr("Descargar música") : tr("Descargar videos");
 }
 
-void Descargas::cancelarYEsperar()
+void Descargas::cortarAlSalir()
 {
     cancelar();
-    proceso.waitForFinished(3000);
+    if (proceso.state() != QProcess::NotRunning) {
+        ::kill(-static_cast<pid_t>(proceso.processId()), SIGKILL);
+        proceso.waitForFinished(300);    // SIGKILL no se puede ignorar: alcanza con un instante
+    }
+    confirmarBorrados();    // lo borrado con «Deshacer» todavía disponible se borra ahora
 }
 
 // Música va a Music; YouTube a Movies/Yt-dlp; redes sociales a la carpeta elegida
@@ -130,10 +166,98 @@ QString Descargas::carpetaMiniaturas() const
     return QDir(herramientas->temporal()).filePath(musica() ? QStringLiteral("miniaturas-musica") : QStringLiteral("miniaturas-videos"));
 }
 
-// Copias de las miniaturas para la lista: las de carpetaMiniaturas() se borran en cada descarga
+// Copias de las miniaturas para la lista (las de carpetaMiniaturas() se borran en cada descarga). En la
+// carpeta de datos, como el historial: la caché Android la puede vaciar cuando quiere
 QString Descargas::carpetaMiniaturasLista() const
 {
-    return QDir(herramientas->temporal()).filePath(musica() ? QStringLiteral("lista-musica") : QStringLiteral("lista-videos"));
+    return QDir(carpetaDatos()).filePath(musica() ? QStringLiteral("miniaturas-musica") : QStringLiteral("miniaturas-videos"));
+}
+
+QString Descargas::nombreMiniatura()
+{
+    QDir().mkpath(carpetaMiniaturasLista());
+    return QDir(carpetaMiniaturasLista()).filePath(
+        QStringLiteral("%1-%2").arg(QDateTime::currentMSecsSinceEpoch()).arg(++miniaturasGuardadas));
+}
+
+QString Descargas::archivoHistorial() const
+{
+    return QDir(carpetaDatos()).filePath(musica() ? QStringLiteral("historial-musica.json") : QStringLiteral("historial-videos.json"));
+}
+
+// Lo de otras veces: sin lo que ya no está en el celular, y terminando de borrar lo que esperaba el «Deshacer»
+void Descargas::cargarHistorial()
+{
+    QFile archivo(archivoHistorial());
+    if (!archivo.open(QIODevice::ReadOnly))
+        return;
+    historialDescargas::Historial h = historialDescargas::cargar(archivo.readAll());
+    archivo.close();
+    for (const QString &escondida : std::as_const(h.papelera)) {
+        QFile::remove(escondida);
+        QDir().rmdir(QFileInfo(escondida).absolutePath());
+    }
+    QList<historialDescargas::Entrada> vivas;
+    QSet<QString> miniaturas;
+    for (const historialDescargas::Entrada &e : std::as_const(h.entradas)) {
+        if (!QFileInfo::exists(e.ruta))
+            continue;
+        vivas << e;
+        if (!e.miniatura.isEmpty())
+            miniaturas.insert(QFileInfo(e.miniatura).fileName());
+    }
+    // Las miniaturas que ya no usa nadie
+    const QStringList guardadas = QDir(carpetaMiniaturasLista()).entryList(QDir::Files);
+    for (const QString &m : guardadas)
+        if (!miniaturas.contains(m))
+            QFile::remove(QDir(carpetaMiniaturasLista()).filePath(m));
+    modeloDescargados.cargar(vivas);
+    urlsFallidas = h.fallidas;
+    if (!h.papelera.isEmpty() || vivas.size() != h.entradas.size())
+        guardarHistorial();
+}
+
+void Descargas::guardarHistorial()
+{
+    historialDescargas::Historial h;
+    h.entradas = modeloDescargados.entradas();
+    h.fallidas = urlsFallidas;
+    for (const Borrado &b : std::as_const(borrados))
+        h.papelera << b.escondida;
+    QSaveFile archivo(archivoHistorial());
+    if (archivo.open(QIODevice::WriteOnly)) {
+        archivo.write(historialDescargas::guardar(h));
+        archivo.commit();
+    }
+}
+
+void Descargas::anotarFallida(const QString &url)
+{
+    if (!url.trimmed().isEmpty() && !fallidasNuevas.contains(url.trimmed()))
+        fallidasNuevas << url.trimmed();
+}
+
+void Descargas::reintentar()
+{
+    if (ocupada_ || urlsFallidas.isEmpty())
+        return;
+    urls_ = urlsFallidas.join(u'\n');
+    emit formularioCambio();
+    descargar();
+}
+
+void Descargas::olvidarFallidas()
+{
+    urlsFallidas.clear();
+    emit fallidasCambio();
+    guardarHistorial();
+}
+
+void Descargas::vaciarHistorial()
+{
+    confirmarBorrados();
+    modeloDescargados.cargar({});
+    QDir(carpetaMiniaturasLista()).removeRecursively();
 }
 
 QString Descargas::archivoRutas() const
@@ -227,6 +351,7 @@ void Descargas::descargar()
     oferta.limpiar();
     total_ = int(urls.size());
     indice = listas = fallidas = 0;
+    fallidasNuevas.clear();
     cancelado = false;
     avisos_.clear();
     emit avisosCambio();
@@ -297,6 +422,7 @@ void Descargas::terminoConsulta(int codigo, QProcess::ExitStatus estado)
             mensaje = it.next().captured(1).trimmed();
         anotar(tr("× No se pudo consultar %1: %2").arg(urlsPedidas.value(indice - 1),
                                                        mensaje.isEmpty() ? tr("yt-dlp terminó con código %1").arg(codigo) : mensaje));
+        anotarFallida(urlsPedidas.value(indice - 1));
         ++fallidas;
     }
     if (indice < total_ && !cancelado) {
@@ -314,6 +440,7 @@ void Descargas::terminoConsulta(int codigo, QProcess::ExitStatus estado)
         return;
     }
     fallidas = 0;
+    fallidasNuevas.clear();    // las que no se pudieron consultar igual se intentan bajar
     if (oferta.vacia()) {
         anotar(tr("No hay calidades, subtítulos ni otras pistas de audio para elegir: se descarga como siempre."));
         siguienteUrl();
@@ -462,7 +589,7 @@ void Descargas::registrarTerminados(const QString &miniatura)
     QString copia;
     if (!miniatura.isEmpty()) {
         QDir().mkpath(carpetaMiniaturasLista());
-        copia = QDir(carpetaMiniaturasLista()).filePath(QStringLiteral("%1.%2").arg(++miniaturasGuardadas).arg(QFileInfo(miniatura).suffix()));
+        copia = nombreMiniatura() + u'.' + QFileInfo(miniatura).suffix();
         if (!QFile::copy(miniatura, copia))
             copia.clear();
     }
@@ -498,6 +625,7 @@ void Descargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
     registrarTerminados(ultimaMiniatura());
     if (!cancelado && (codigo != 0 || estado != QProcess::NormalExit || listas == antes)) {
         ++fallidas;
+        anotarFallida(urlsPedidas.value(indice - 1));
         anotar(tr("× Falló: %1").arg(mensajeError.isEmpty() ? tr("yt-dlp terminó con código %1").arg(codigo) : mensajeError));
         if (musica())
             anotar(tr("   Puede deberse a la falta de cookies (probá con «Bajar con el servidor», que usa las del servidor)."));
@@ -508,6 +636,9 @@ void Descargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
 
 void Descargas::finalizar()
 {
+    urlsFallidas = fallidasNuevas;
+    emit fallidasCambio();
+    guardarHistorial();
     ponerProgreso(-1, total_);
     mostrarProgreso_ = false;
     emit progresoCambio();
@@ -534,16 +665,63 @@ bool Descargas::ver(int fila)
     return false;
 }
 
-void Descargas::borrar(int fila)
+bool Descargas::borrar(int fila)
 {
     const QString ruta = modeloDescargados.ruta(fila);
     if (ruta.isEmpty())
-        return;
-    if (QFile::remove(ruta) || !QFileInfo::exists(ruta)) {
-        Plataforma::avisarArchivoNuevo(ruta);    // para que deje de aparecer en la galería
-        QDir().rmdir(QFileInfo(ruta).absolutePath());    // la carpeta del artista, si quedó vacía
+        return false;
+    const historialDescargas::Entrada entrada = modeloDescargados.entradas().at(fila);
+    if (!QFileInfo::exists(ruta)) {      // ya no estaba: solo se saca de la lista
         modeloDescargados.quitar(fila);
-    } else {
-        anotar(tr("No se pudo borrar: %1").arg(ruta));
+        return false;
     }
+    // Se esconde en la misma carpeta (un rename: no copia nada aunque sea un video enorme)
+    const QString escondida = historialDescargas::rutaEscondida(ruta);
+    QFile::remove(escondida);
+    if (!QFile::rename(ruta, escondida)) {
+        anotar(tr("No se pudo borrar: %1").arg(ruta));
+        return false;
+    }
+    Plataforma::avisarArchivoNuevo(ruta);    // para que deje de aparecer en la galería
+    borrados << Borrado{entrada, escondida, fila};
+    modeloDescargados.quitar(fila);          // guarda el historial (con el escondido en la papelera)
+    return true;
+}
+
+void Descargas::deshacerBorrado(const QString &ruta)
+{
+    for (int i = 0; i < borrados.size(); ++i) {
+        if (borrados.at(i).entrada.ruta != ruta)
+            continue;
+        const Borrado b = borrados.takeAt(i);
+        if (QFile::rename(b.escondida, ruta)) {
+            Plataforma::avisarArchivoNuevo(ruta);
+            modeloDescargados.insertar(b.fila, b.entrada);
+        } else {
+            anotar(tr("No se pudo recuperar: %1").arg(ruta));
+            guardarHistorial();
+        }
+        return;
+    }
+}
+
+void Descargas::confirmarBorrado(const QString &ruta)
+{
+    for (int i = 0; i < borrados.size(); ++i) {
+        if (borrados.at(i).entrada.ruta != ruta)
+            continue;
+        const Borrado b = borrados.takeAt(i);
+        QFile::remove(b.escondida);
+        QDir().rmdir(QFileInfo(ruta).absolutePath());    // la carpeta del artista, si quedó vacía
+        if (!b.entrada.miniatura.isEmpty())
+            QFile::remove(b.entrada.miniatura);
+        guardarHistorial();
+        return;
+    }
+}
+
+void Descargas::confirmarBorrados()
+{
+    while (!borrados.isEmpty())
+        confirmarBorrado(borrados.constFirst().entrada.ruta);
 }

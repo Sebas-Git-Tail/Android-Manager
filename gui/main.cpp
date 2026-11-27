@@ -28,6 +28,15 @@ int main(int argc, char *argv[])
     // Sin esto, Qt frena la app al pasarla a segundo plano y las descargas y los respaldos se
     // quedarían esperando (nadie leería la salida de yt-dlp y rsync)
     qputenv("QT_BLOCK_EVENT_LOOPS_WHEN_SUSPENDED", "0");
+    // Dibujar en el hilo principal y no en uno aparte. En Qt 6.10.0, si Android saca la superficie de la
+    // ventana (la app pasa a segundo plano) mientras el hilo de dibujo está a mitad de un cuadro, al
+    // terminarlo intenta crear otra y choca con el «deadlock protector» de Qt que tiene tomado otra parte
+    // (la accesibilidad o el teclado): «Failed to acquire deadlock protector for
+    // QAndroidPlatformOpenGLWindow::eglSurface()» y qFatal → SIGABRT (QTBUG-140490, QTBUG-140674). En el
+    // hilo principal, sacar la superficie y dibujar no pueden pasar a la vez. La app no tiene animaciones
+    // pesadas: dibujar en el hilo principal no se nota.
+    if (!qEnvironmentVariableIsSet("QSG_RENDER_LOOP"))
+        qputenv("QSG_RENDER_LOOP", "basic");
 
     QGuiApplication app(argc, argv);
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
@@ -70,8 +79,10 @@ int main(int argc, char *argv[])
     ConfigServidor::instancia().actualizar();
 
     const int codigo = app.exec();
-    sistema.cancelarTodo();    // si se sale con algo en curso, que no queden procesos sueltos
-    servidor.cancelarYEsperar();
+    // Si se sale con algo en curso, que no queden procesos sueltos. Se cortan sin esperar (antes se
+    // esperaba hasta 3 s por cada uno y Android podía dar la app por colgada al cerrarla)
+    sistema.cancelarTodo();
+    servidor.cortarAlSalir();
     minecraft.cancelarTodo();
     return codigo;
 }

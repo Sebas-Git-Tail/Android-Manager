@@ -9,6 +9,8 @@ import Comun.Ui
 
 Hoja {
     title: "Android-Manager"
+    // Debajo de cada herramienta mientras están apagadas
+    readonly property string textoEsperando: Herramientas.preparando ? "Se habilita cuando termine de preparar las herramientas." : "No disponible (ver el aviso de arriba)."
 
     // ── Encabezado ──
     RowLayout {
@@ -128,7 +130,7 @@ Hoja {
         tono: ventana.azul
         ocupada: Videos.ocupada
         progreso: Videos.progresoArchivo
-        detalle: Videos.ocupada ? Videos.estado : "YouTube y redes sociales, en MKV"
+        detalle: Videos.ocupada ? Videos.estado : !Herramientas.listas ? textoEsperando : "YouTube y redes sociales, en MKV"
         onClicked: ventana.abrir(Qt.resolvedUrl("PaginaDescargas.qml"), { modelo: Videos })
     }
     TarjetaHerramienta {
@@ -138,7 +140,7 @@ Hoja {
         tono: ventana.oscuro ? "#c48df0" : "#8a4fc4"
         ocupada: Musica.ocupada
         progreso: Musica.progresoArchivo
-        detalle: Musica.ocupada ? Musica.estado : "YouTube Music, con carátula y datos de la canción"
+        detalle: Musica.ocupada ? Musica.estado : !Herramientas.listas ? textoEsperando : "YouTube Music, con carátula y datos de la canción"
         onClicked: ventana.abrir(Qt.resolvedUrl("PaginaDescargas.qml"), { modelo: Musica })
     }
     TarjetaHerramienta {
@@ -148,7 +150,7 @@ Hoja {
         tono: ventana.verde
         ocupada: Respaldo.ocupada
         progreso: Respaldo.progreso
-        detalle: Respaldo.ocupada ? Respaldo.estado : "Copia el celular al servidor. " + Respaldo.ultimoRespaldo
+        detalle: Respaldo.ocupada ? Respaldo.estado : !Herramientas.listas ? textoEsperando : "Copia el celular al servidor. " + Respaldo.ultimoRespaldo
         onClicked: ventana.abrir(Qt.resolvedUrl("PaginaRespaldo.qml"))
     }
 }
