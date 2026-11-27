@@ -92,6 +92,10 @@ QString Respaldo::celular() const
 {
     static const QRegularExpression valido(QStringLiteral("^[^/\\\\.\\p{Cc}][^/\\\\\\p{Cc}]*$"));
     const QString nombre = celular_.trimmed();
+    // «….anteriores» es el nombre de las carpetas de versiones viejas: la limpieza de 30 días borraría
+    // lo de adentro de un respaldo que se llamara así
+    if (nombre.endsWith(QStringLiteral(".anteriores")))
+        return {};
     return valido.match(nombre).hasMatch() ? nombre : QString();
 }
 
@@ -184,7 +188,7 @@ bool Respaldo::revisarNombres(const QString &contrasenaEscrita)
         return false;
     }
     if (celular().isEmpty()) {
-        ponerEstado(tr("Escribí un nombre para el celular, sin barras y sin empezar con un punto."), Error);
+        ponerEstado(tr("Escribí un nombre para el celular, sin barras, sin empezar con un punto ni terminar en «.anteriores»."), Error);
         emit enfocar(QStringLiteral("celular"));
         return false;
     }
@@ -329,7 +333,8 @@ void Respaldo::copiar(const QString &servidor)
 
 QStringList Respaldo::argumentosRespaldo(const QString &servidor)
 {
-    versionNueva = analisisRsync::nombreVersion(QDateTime::currentDateTime());
+    const QDateTime ahora = QDateTime::currentDateTime();    // la misma hora para la carpeta y el aviso
+    versionNueva = analisisRsync::nombreVersion(ahora);
     QStringList argumentos{QStringLiteral("-ah"), QStringLiteral("--info=progress2,name1,backup1"),
                            // sin esto, rsync escribe las tildes de los nombres como \\#303\\#261
                            QStringLiteral("-8"),
@@ -346,7 +351,7 @@ QStringList Respaldo::argumentosRespaldo(const QString &servidor)
                            QStringLiteral("--delete"),
                            // Lo que --delete borra o la copia pisa va a <celular>.anteriores/<fecha>/ (fuera del
                            // respaldo, así --delete no lo toca)
-                           QStringLiteral("--backup"), analisisRsync::argumentoBackupDir(celular(), QDateTime::currentDateTime())};
+                           QStringLiteral("--backup"), analisisRsync::argumentoBackupDir(celular(), ahora)};
     // Y las versiones de más de 30 días se borran antes de empezar (en la misma conexión)
     const QString limpieza = analisisRsync::rsyncPathConLimpieza(carpetaPersona());
     if (!limpieza.isEmpty() && !simulando)

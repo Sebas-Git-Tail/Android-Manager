@@ -16,7 +16,12 @@ Hoja {
         target: Respaldo
         function onPedirConfirmacion(ruta) { dialogoDestino.ruta = ruta; dialogoDestino.open() }
         function onContrasenaUsada() { campoContrasena.text = "" }
-        function onRestauracionCambio() { seccionRestaurar.version = ""; seccionRestaurar.carpeta = "" }
+        function onRestauracionCambio() {
+            seccionRestaurar.version = ""
+            seccionRestaurar.carpeta = ""
+            eleccionVersion.currentIndex = 0    // que lo que se ve sea lo que se va a restaurar
+            eleccionCarpeta.currentIndex = 0
+        }
         function onEnfocar(campo) {
             const campos = { persona: campoPersona, celular: campoCelular, contrasena: campoContrasena }
             if (campo === "contrasena") campoContrasena.text = ""
@@ -174,10 +179,15 @@ Hoja {
         }
         Label { visible: Respaldo.listado; text: "Desde"; color: ventana.tintaSecundaria; font.pixelSize: 13 }
         ComboBox {
+            id: eleccionVersion
             visible: Respaldo.listado
             Layout.fillWidth: true
             model: ["El respaldo de ahora"].concat(Respaldo.versiones.map(v => "Lo que salió el " + v.texto))
-            onActivated: (i) => { seccionRestaurar.version = i === 0 ? "" : Respaldo.versiones[i - 1].nombre; seccionRestaurar.carpeta = "" }
+            onActivated: (i) => {
+                seccionRestaurar.version = i === 0 ? "" : Respaldo.versiones[i - 1].nombre
+                seccionRestaurar.carpeta = ""
+                eleccionCarpeta.currentIndex = 0
+            }
         }
         Label {
             visible: Respaldo.listado && seccionRestaurar.version !== ""

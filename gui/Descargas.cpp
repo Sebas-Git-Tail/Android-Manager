@@ -193,6 +193,14 @@ void Descargas::cargarHistorial()
         return;
     historialDescargas::Historial h = historialDescargas::cargar(archivo.readAll());
     archivo.close();
+    urlsFallidas = h.fallidas;
+    // Sin acceso a los archivos todo parecería borrado: la lista queda como estaba (y lo de la papelera,
+    // para borrarlo otra vez que se pueda)
+    if (!Plataforma::tieneAccesoArchivos()) {
+        papeleraPendiente = h.papelera;
+        modeloDescargados.cargar(h.entradas);
+        return;
+    }
     for (const QString &escondida : std::as_const(h.papelera)) {
         QFile::remove(escondida);
         QDir().rmdir(QFileInfo(escondida).absolutePath());
@@ -212,7 +220,6 @@ void Descargas::cargarHistorial()
         if (!miniaturas.contains(m))
             QFile::remove(QDir(carpetaMiniaturasLista()).filePath(m));
     modeloDescargados.cargar(vivas);
-    urlsFallidas = h.fallidas;
     if (!h.papelera.isEmpty() || vivas.size() != h.entradas.size())
         guardarHistorial();
 }
@@ -222,6 +229,7 @@ void Descargas::guardarHistorial()
     historialDescargas::Historial h;
     h.entradas = modeloDescargados.entradas();
     h.fallidas = urlsFallidas;
+    h.papelera = papeleraPendiente;
     for (const Borrado &b : std::as_const(borrados))
         h.papelera << b.escondida;
     QSaveFile archivo(archivoHistorial());
@@ -636,7 +644,14 @@ void Descargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
 
 void Descargas::finalizar()
 {
-    urlsFallidas = fallidasNuevas;
+    if (cancelado) {
+        // Lo cancelado no se llegó a intentar: las que fallaban de antes siguen para «Reintentar»
+        for (const QString &url : std::as_const(fallidasNuevas))
+            if (!urlsFallidas.contains(url))
+                urlsFallidas << url;
+    } else {
+        urlsFallidas = fallidasNuevas;
+    }
     emit fallidasCambio();
     guardarHistorial();
     ponerProgreso(-1, total_);
@@ -713,7 +728,13 @@ void Descargas::confirmarBorrado(const QString &ruta)
         const Borrado b = borrados.takeAt(i);
         QFile::remove(b.escondida);
         QDir().rmdir(QFileInfo(ruta).absolutePath());    // la carpeta del artista, si quedó vacía
-        if (!b.entrada.miniatura.isEmpty())
+        // La miniatura se comparte entre los archivos de una misma descarga (una lista): solo si ya no la usa otro
+        bool usada = false;
+        for (const historialDescargas::Entrada &e : modeloDescargados.entradas())
+            usada = usada || e.miniatura == b.entrada.miniatura;
+        for (const Borrado &otro : std::as_const(borrados))
+            usada = usada || otro.entrada.miniatura == b.entrada.miniatura;
+        if (!b.entrada.miniatura.isEmpty() && !usada)
             QFile::remove(b.entrada.miniatura);
         guardarHistorial();
         return;

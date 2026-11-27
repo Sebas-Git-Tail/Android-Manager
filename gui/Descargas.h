@@ -235,4 +235,5 @@ private:
     QStringList fallidasNuevas;        // las que van fallando en la descarga en curso
     struct Borrado { historialDescargas::Entrada entrada; QString escondida; int fila = 0; };
     QList<Borrado> borrados;           // esperando el «Deshacer»
+    QStringList papeleraPendiente;     // la del historial, si al abrir no había acceso a los archivos
 };
